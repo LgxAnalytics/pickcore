@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+build/
+dist/
+*.spec
+_build_step1.py
+Logi/
+Logs/
+Archiwum/
+*.json
+!package.json
+*.pdf
+*.csv
+*.zpl
+*.html
+.venv/
