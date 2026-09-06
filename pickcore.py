@@ -258,7 +258,7 @@ def _col2(x0, cols):
 def parse_bc_lines_xlsx(path):
     """Zrodlo PRAWDY: eksport Lines z karty picka BC (Lines -> Open in Excel).
        Picking-list PDF agreguje linie per (item,bin) PONAD orderami i gubi przypisania AS
-       (case PI033319: 2+6 radia -> "8" pod jednym AS). XLSX niesie pelna strukture.
+       (a real case: 2+6 units collapsed to "8" under a single assembly). XLSX carries the full structure.
        Bierzemy tylko Action Type=Take (zebranie z binu); Place=odlozenie (DISPATCH/ASSEMBLY)."""
     import openpyxl
     wb = openpyxl.load_workbook(path, data_only=True, read_only=True)
@@ -303,7 +303,7 @@ def parse_document(path):
         return parse_bc_lines_xlsx(path)
     """Dispatcher: wykrywa typ i routuje do wlasciwego parsera.
        Zwraca (doc_type, header_no, source/'', rows, warnings).
-       Typ szukany na WSZYSTKICH stronach (naglowek bywa nie na str.1)."""
+       Typ szukany na WSZYSTKICH stronach (header bywa nie na str.1)."""
     dt = "unknown"
     with pdfplumber.open(path) as pdf:
         for page in pdf.pages:
@@ -341,7 +341,7 @@ def order_list(rows):
     return out
 
 def primary_order(rows, header_no):
-    """Glowny numer (naglowek + nazwa pliku): pierwszy SO, inaczej pierwsze zlecenie, inaczej PI.
+    """Glowny numer (header + nazwa pliku): pierwszy SO, inaczej pierwsze zlecenie, inaczej PI.
        Preferuje SO (sales order) bo po nim szukamy zlecenia w BC."""
     orders = order_list(rows)
     so = [o for o in orders if o.upper().startswith("SO")]
@@ -911,7 +911,7 @@ def extract_label_kits(rows):
     return kits
 
 def generate_kit_zpl(kit_id, items, copies):
-    """(zpl, truncated, n_fit) - naglowek + linia + wiersze 'SKU  - DESC'; ^PQ=copies."""
+    """(zpl, truncated, n_fit) - header + linia + wiersze 'SKU  - DESC'; ^PQ=copies."""
     y = HEADER_Y
     body, fit = [], 0
     for it in items:
@@ -1537,17 +1537,17 @@ button{background:#383026;color:#f2ece1;border:0;border-radius:6px;padding:9px 1
 
 # ========== LOCATION INDEX (where this item already sits) ==========
 # Source #1 (works immediately, no credentials): own PA_LINE / RELOC_LINE telemetry.
-# Zrodlo #2 (opcjonalne, gdy IT wystawi dostep): adapter BC - patrz bc_bin_contents().
-# Kontrakt: {sku: [{"bin":..., "n":liczba_trafien, "last":ISO, "src":"local|bc"}, ...]} posortowane malejaco.
+# Source #2 (optional, when access is granted): the BC adapter - see bc_bin_contents().
+# Contract: {sku: [{"bin":..., "n":hit_count, "last":ISO, "src":"local|bc"}, ...]} sorted descending.
 
 LOC_INDEX = {"map": {}, "built": "", "n": 0}
 
-# Sygnatury dzwiekowe - wspoldzielone przez PC (winsound) i konsole TC22 (Web Audio).
-# Sygnatury w stylu retro-arcade - WLASNE sekwencje, nie transkrypcje cudzych melodii.
-# (System stoi na sprzecie firmowym i idzie do portfolio - zadnej chronionej muzyki.)
+# Sound signatures - shared by the desktop (winsound) and the handheld console (Web Audio).
+# Retro-arcade styled - ORIGINAL sequences, not transcriptions of anyone's music.
+# (No copyrighted audio anywhere in the project.)
 SOUND_KINDS = ("ok", "err", "warn", "line", "done")
-SOUND_EXT_PC  = (".wav",)                      # winsound gra WYLACZNIE WAV
-SOUND_EXT_WEB = (".mp3", ".ogg", ".wav", ".m4a")   # przegladarka na TC22 dekoduje wiecej
+SOUND_EXT_PC  = (".wav",)                      # winsound plays WAV ONLY
+SOUND_EXT_WEB = (".mp3", ".ogg", ".wav", ".m4a")   # the handheld browser decodes more formats
 
 def sound_dir(cfg):
     d = (cfg.get("sound_dir") or "").strip()
@@ -1564,15 +1564,15 @@ def find_sound(cfg, kind, exts):
     return ""
 
 BEEP_SEQS = {
-    # "moneta": krotki blip + wyzszy dzwiek trzymany - najczestszy dzwiek zmiany, ma byc lekki
+    # "coin": short blip plus a held higher tone - the most frequent sound of a shift, keep it light
     "ok":   [(988, 55), (1319, 150)],
-    # blad: opadajaca sekunda, wyraznie "w dol" - slychac w halasie, nie da sie pomylic z ok
+    # error: a falling second, clearly downward - audible over noise, impossible to mistake for ok
     "err":  [(392, 120), (294, 240)],
-    # uwaga: dwa srednie blipy
+    # warning: two mid blips
     "warn": [(660, 80), (660, 80)],
-    # linia skompletowana: wznoszaca trojka
+    # line complete: a rising triad
     "line": [(784, 70), (988, 70), (1319, 160)],
-    # caly pick gotowy: wlasna fanfara - arpeggio w gore z akcentem na koncu
+    # whole pick done: an arpeggio upward with an accent at the end
     "done": [(523,90),(659,90),(784,90),(1047,110),(988,90),(1047,90),(1319,340)],
 }
 snd_state = {"id": 0, "kind": ""}
@@ -1602,7 +1602,7 @@ def build_loc_index(max_events=60000):
             rec["n"] += 1
             ts = e.get("ts") or ""
             if ts > rec["last"]: rec["last"] = ts
-        # RELOC_LINE oznacza wyprowadzke - bin zrodlowy traci wage
+        # RELOC_LINE marks a move out - the source bin loses weight
         for ln in lines:
             try: e = json.loads(ln)
             except Exception: continue
@@ -1618,7 +1618,7 @@ def build_loc_index(max_events=60000):
         LOC_INDEX.update(map=out, built=datetime.now().isoformat(timespec="seconds"), n=len(out))
     except Exception as e:
         # Bez tego indeksu Inbound nie pokazuje ZADNYCH sugestii, a operator widzi
-        # pusta kolumne zamiast komunikatu. Dokladnie ten objaw zglosil Peter.
+        # an empty column instead of a message. This exact symptom was reported from the floor.
         note_io_fail("build_loc_index", e)
     return LOC_INDEX
 
@@ -1626,18 +1626,18 @@ def loc_suggest(sku):
     """Zwraca liste kandydatow (max 3) dla SKU albo []."""
     return LOC_INDEX["map"].get(_norm_sku(sku or ""), [])
 
-# ---------- ADAPTER BUSINESS CENTRAL (Bin Contents przez OData V4 + OAuth2) ----------
-# ZASADY (nienegocjowalne):
+# ---------- BUSINESS CENTRAL ADAPTER (Bin Contents over OData V4 + OAuth2) ----------
+# RULES (non-negotiable):
 #  1. Query ONLY the SKUs on the current document, never the whole stock. No background polling.
-#  2. Sekret NIGDY w configu ani w kodzie: zmienna srodowiskowa PICKCORE_BC_SECRET
-#     albo Windows Credential Manager (keyring). Config trzyma wylacznie tenant/client_id/URL.
+#  2. The secret NEVER lives in the config or the source: environment variable PICKCORE_BC_SECRET
+#     or Windows Credential Manager (keyring). The config holds only tenant/client_id/URL.
 #  3. Every failure degrades silently to the local index - operations must not stall on an API.
-#  4. Timeouty krotkie: operator czeka na liste, nie na siec.
+#  4. Short timeouts: the operator is waiting for a list, not for the network.
 BC_TOKEN = {"tok": "", "exp": 0.0}
-BC_CACHE = {}          # sku -> (ts, [rekordy])
+BC_CACHE = {}          # sku -> (ts, [records])
 BC_STATE = {"last": "", "err": "", "n": 0}
-bc_state = BC_STATE          # alias uzywany w GUI (flaga "refreshing")
-BC_TTL = 900           # 15 min - bin contents nie zmienia sie co sekunde
+bc_state = BC_STATE          # alias used by the GUI (the "refreshing" flag)
+BC_TTL = 900           # 15 min - bin contents do not change by the second
 
 def _bc_secret():
     """Sekret wylacznie ze zrodel zewnetrznych. Brak sekretu = adapter wylaczony."""
@@ -1687,7 +1687,7 @@ def bc_bin_contents(skus, cfg, force=False):
     if not (base and comp): return out
     try:
         tok = _bc_token(cfg)
-        for i in range(0, len(need), 15):                     # paczki po 15 SKU
+        for i in range(0, len(need), 15):                     # batches of 15 SKUs
             chunk = need[i:i+15]
             flt = " or ".join(f"Item_No eq '{sk}'" for sk in chunk)
             url = (f"{base}/ODataV4/Company('{urllib.parse.quote(comp)}')/{ws}"
@@ -1703,14 +1703,14 @@ def bc_bin_contents(skus, cfg, force=False):
                 if not (sk and b): continue
                 try: q = float(row.get("Quantity") or 0)
                 except Exception: q = 0
-                if q <= 0: continue                            # pusty bin nie jest sugestia
+                if q <= 0: continue                            # an empty bin is not a suggestion
                 rec = {"sku": sk, "bin": b, "qty": q}
                 got.setdefault(sk, []).append(rec); out.append(rec)
             for sk in chunk:
-                BC_CACHE[sk] = (now, got.get(sk, []))           # cache'ujemy tez pustki
+                BC_CACHE[sk] = (now, got.get(sk, []))           # empty results are cached too
         BC_STATE.update(last=datetime.now().strftime("%H:%M:%S"), err="", n=len(out))
     except Exception as e:
-        BC_STATE.update(err=str(e)[:120])                       # degradacja do indeksu lokalnego
+        BC_STATE.update(err=str(e)[:120])                       # degrade to the local index
     return out
 
 def load_bin_export(path):
@@ -1726,7 +1726,7 @@ def load_bin_export(path):
         raw = open(path, "r", encoding="utf-8-sig", errors="ignore").read()
         if not raw.strip():
             return [], "file is empty"
-        # Separator wykrywany z pierwszej linii: Excel w ustawieniach PL/EU zapisuje SREDNIKAMI.
+        # Separator detected from the first line: Excel under EU locales writes SEMICOLONS.
         head = raw.splitlines()[0] if raw.splitlines() else ""
         delim = max([";", ",", "\t", "|"], key=lambda d: head.count(d))
         if head.count(delim) == 0: delim = ","
@@ -1752,7 +1752,7 @@ def load_bin_export(path):
             if c_qty:
                 try: q = float(str(r.get(c_qty) or 0).replace(",", ".").replace(" ", "") or 0)
                 except Exception: q = 0.0
-                if q <= 0: continue          # pusty bin to nie sugestia
+                if q <= 0: continue          # an empty bin is not a suggestion
             rows.append({"sku": sku, "bin": b, "qty": q})
             if c_desc:
                 d = (r.get(c_desc) or "").strip()
@@ -1799,7 +1799,7 @@ def merge_bc_into_index(skus, cfg):
         LOC_INDEX["map"][sk] = (bc_recs + [c for c in local if c["bin"] not in seen])[:3]
     return len(by)
 
-# ================= INBOUND (PUT-AWAY SESSION) - narzedzia =================
+# ================= INBOUND (PUT-AWAY SESSION) - helpers =================
 SPECIAL_BINS = {"CROSSDOCKING","WARRANTY","ASSEMBLY","DISPATCH"}
 def format_bin_input(raw):
     """Maska 'sztywnych myslnikow': '30a03a2' -> '30-A03-A2'. Zwraca (sformatowany, ok).
@@ -1814,8 +1814,8 @@ def format_bin_input(raw):
         if PICKMAP_LOC.match(f): return f, True
     return s, False
 
-LAST_PUTAWAY = {"hdr": "", "rows": []}      # ostatni sparsowany put-away (prefill sesji)
-_TEST_HOOKS = {}                             # v1.0: uchwyty dla harnessu smoke-testow (zero wplywu na runtime)
+LAST_PUTAWAY = {"hdr": "", "rows": []}      # last parsed put-away (prefills the session)
+_TEST_HOOKS = {}                             # handles for the smoke-test harness (no runtime impact)
 
 def export_inbound_day_html(entries, out_path):
     """Jeden plik dnia dla Office/Teams: Item / Description / Qty / PO (PO na koncu linii,
@@ -1903,7 +1903,7 @@ def pickmap_iso_data():
     from collections import Counter
     heat, un = Counter(), Counter()
     for ev in load_telemetry():
-        seen = set()                                   # WIZYTY: dedupe lokacji w obrebie jednego picka
+        seen = set()                                   # VISITS: locations deduplicated within a single pick
         for ln in ev.get("lines") or []:
             b = (ln.get("bin") or "").strip().upper()
             if b: seen.add(b)
@@ -1941,7 +1941,7 @@ ISO_BLOCKS = [
     {"label":"A even 10-12", "faces":[("02","A","even")], "bays":[10,12],   "gx":26.0, "gy":7.6, "tall":True},
     {"label":"A even 02-06", "faces":[("02","A","even")], "bays":[2,4,6],   "gx":29.5, "gy":7.6, "tall":True},
 ]
-_ISO_HEAT = ["#3a3f4a", "#FDD79A", "#F7A64B", "#E2641F", "#B02E0C"]   # 0 = pusty + 4 stopnie (paleta szablonu)
+_ISO_HEAT = ["#3a3f4a", "#FDD79A", "#F7A64B", "#E2641F", "#B02E0C"]   # 0 = empty plus four levels (template palette)
 
 def build_pickmap_iso_html(heat, unmapped, out_path):
     """Samowystarczalny HTML/SVG: izometryczny rzut obu hal. Jeden szescian = jeden bay;
@@ -1979,7 +1979,7 @@ def build_pickmap_iso_html(heat, unmapped, out_path):
     cells.sort(key=lambda c: c[0])
     P = []
     for _, x, y, h, b, v, lab, det in cells:
-        _, B0, C0, D0 = iso(x, y), iso(x+1, y), iso(x+1, y+1), iso(x, y+1)   # A0 niepotrzebny malarzowi
+        _, B0, C0, D0 = iso(x, y), iso(x+1, y), iso(x+1, y+1), iso(x, y+1)   # A0 is not needed by the painter algorithm
         A1, B1, C1, D1 = iso(x, y, h), iso(x+1, y, h), iso(x+1, y+1, h), iso(x, y+1, h)
         col = _ISO_HEAT[bucket(v)]
         P.append(f'<g><title>{lab} · bay {b:02d}\n{det}</title>'
@@ -2066,10 +2066,10 @@ def analyze_warehouse(tele):
     all_singles = [c for v in zone_singles.values() for c in v]
     med1 = round(median(all_singles),1) if all_singles else 0.0
     movers = []
-    hot = items_rank[:max(5, len(items_rank)//5)]        # gorna ~20% (ABC klasa A)
+    hot = items_rank[:max(5, len(items_rank)//5)]        # top ~20% (ABC class A)
     for sku, picks, units, z in hot:
         zc = zone_cost.get(z)
-        if zc and med1 and zc[0] > med1 * 1.3:           # strefa >30% wolniejsza od mediany 1-line
+        if zc and med1 and zc[0] > med1 * 1.3:           # zone more than 30% slower than the single-line median
             movers.append((sku, picks, z, zc[0]))
     pairs_rank = sorted([p for p in pairs.items() if p[1] >= 2], key=lambda kv: -kv[1])
     summary = {"picks": len(tele), "days": len(days), "units": total_units,
@@ -2094,9 +2094,9 @@ def parse_customer_file(path):
             code = ("" if row[0] is None else str(row[0])).strip()
             name = ("" if row[1] is None else str(row[1])).strip()
             if not code: continue
-            if i == 0 and code.lower() in HEADERS: continue  # naglowek
+            if i == 0 and code.lower() in HEADERS: continue  # header
             out[code.upper()] = name
-    else:  # CSV (auto separator , albo ;)
+    else:  # CSV (separator auto-detected, comma or semicolon)
         import csv as _csv
         with open(path, "r", encoding="utf-8-sig", errors="replace", newline="") as f:
             sample = f.read(4096); f.seek(0)
@@ -2198,10 +2198,10 @@ def _row_html(i, it, role=""):
 
 def build_sheet_html(header_no, rows, customers=None):
     customers = customers or {}
-    # --- Zestawy po KOLUMNIE ORDER (twardy klucz z BC), nie po sasiedztwie ---
-    # BC nie gwarantuje kolejnosci linii: czesci potrafia stac PRZED radiem, a item bez -ASM
-    # przerywal strumien (case PI033319: znikniete ramki AS, radio w LOOSE, kit-potworki).
-    # Kit = grupa order zawierajaca radio; main = linia radiowa; reszta grupy = czesci.
+    # --- Kits grouped by the ORDER COLUMN (a hard key from the ERP), not by adjacency ---
+    # The ERP does not guarantee line order: parts can appear BEFORE the main unit, and an item
+    # without the -ASM suffix used to break the stream (missing frames, main unit landing in LOOSE, malformed kits).
+    # Kit = an order group containing a main unit; main = that line; the rest of the group are parts.
     from collections import OrderedDict as _OD
     _by_order = _OD()
     for it in rows:
@@ -2219,7 +2219,7 @@ def build_sheet_html(header_no, rows, customers=None):
             standalone.extend(_its)
 
     body, seq = [], 0
-    # 1) zestawy montazowe (kolejnosc dokumentu - radio przed czesciami)
+    # 1) assembly kits (document order - main unit before its parts)
     for g in kits:
         radio = g['main']; order = g.get('order') or radio.get("order","")
         rlbl = f'{html.escape(radio["item"])} ×{radio["qty"]}'
@@ -2229,7 +2229,7 @@ def build_sheet_html(header_no, rows, customers=None):
         for it in sorted(g['parts'], key=lambda r: natural_bin_key(r["bin"])):
             seq += 1; body.append(_row_html(seq, it, "part"))
         body.append('</div></div>')
-    # 2) pozycje standalone (zone-walk, sortowane po lokacji)
+    # 2) standalone lines (zone walk, sorted by location)
     if standalone:
         if kits:
             body.append('<div class="zone"><span class="z">LOOSE</span>'
@@ -2258,7 +2258,7 @@ def build_sheet_html(header_no, rows, customers=None):
                      f'<span class="rb">{html.escape(reminder)}</span></div>' if reminder else '')
 
     orders = order_list(rows); due=html.escape(_uniform(rows,"due")); picker=html.escape(get_picker())
-    # SO (zlecenie) glowny numer ZAWSZE, PI maly dodatek; przy wielu zleceniach listujemy reszte
+    # The sales order is ALWAYS the primary number, the shipment number a small addition; extra orders are listed after it
     prim = primary_order(rows, header_no)
     others = [o for o in orders if o != prim]
     main_no = html.escape(prim)
@@ -2345,8 +2345,8 @@ def _pa_boxes(bin_code=""):
     boxes = ('<div class="boxes">'+grp(0,2)+'<span class="dash">-</span>'
              +grp(2,5)+'<span class="dash">-</span>'+grp(5,7)+'</div>')
     if (bin_code or "").strip():
-        # Pole tylko-do-odczytu: zaznaczenie MYSZKA + Ctrl+C daje CZYSTY TEKST.
-        # Zaznaczenie zwyklego <div> kopiuje strukture HTML i BC widzi "9 rows".
+        # Read-only field: selecting with the MOUSE plus Ctrl+C yields PLAIN TEXT.
+        # Selecting a plain <div> copies HTML structure and the ERP then sees "9 rows".
         boxes += (f'<input class="bintxt" readonly value="{html.escape(bin_code.strip().upper())}" '
                   f'onclick="this.select()" title="Zaznacz i skopiuj (Ctrl+C)">')
     return boxes
@@ -2382,8 +2382,8 @@ def build_putaway_html(header_no, source, rows, filled=False):
             for it in grp: seq+=1; body.append(_pa_row(seq,it,"", it.get("bin","") if filled else ""))
             body.append('</div></div>')
     units=sum(r["qty"] for r in rows); printed=datetime.now().strftime("%d/%m/%y, %H:%M"); operator=get_picker()
-    # Kopiowanie lokacji jako CZYSTY TEKST - zaznaczenie myszka kopiuje strukture HTML
-    # i BC widzi "9 rows" zamiast jednego kodu. writeText() wklada do schowka sam string.
+    # Location copied as PLAIN TEXT - a mouse selection copies HTML structure
+    # and the ERP sees "9 rows" instead of one code. writeText() puts the bare string on the clipboard.
     copy_js = ("""<style>
 .bintxt{display:block;margin-top:4px;width:120px;border:1px solid #c7cfd8;border-radius:4px;
   background:#fbfcfe;color:#14477d;font:700 13px Consolas,monospace;letter-spacing:.5px;
@@ -2426,7 +2426,7 @@ def html_to_pdf(html_path, pdf_path):
     if not edge: raise RuntimeError("Microsoft Edge not found - cannot render PDF")
     edge_profile = os.path.join(tempfile.gettempdir(), "pickcore_edge_profile")
     uri = Path(html_path).as_uri()
-    # usun stary plik, zeby nie pomylic z poprzednim renderem
+    # delete the old file so it cannot be confused with the previous render
     try:
         if os.path.exists(pdf_path): os.remove(pdf_path)
     except Exception: pass
@@ -2437,7 +2437,7 @@ def html_to_pdf(html_path, pdf_path):
         while time.time() - t0 < timeout:
             if os.path.exists(pdf_path):
                 sz = os.path.getsize(pdf_path)
-                if sz > 0 and sz == last:   # rozmiar stabilny = zapis skonczony
+                if sz > 0 and sz == last:   # a stable size means the write has finished
                     return True
                 last = sz
             time.sleep(0.5)
@@ -2458,7 +2458,7 @@ def html_to_pdf(html_path, pdf_path):
             return pdf_path
     raise RuntimeError("Edge did not produce a PDF")
 
-LAST_PRINT = {"html": None, "hdr": ""}   # ostatni arkusz do ponownego wydruku (sciezka HTML w archiwum)
+LAST_PRINT = {"html": None, "hdr": ""}   # last sheet available for reprint (HTML path in the archive)
 
 def print_pdf(pdf_path, printer_name=None):
     """Druk PDF bez dodatkowych plikow.
@@ -2469,12 +2469,12 @@ def print_pdf(pdf_path, printer_name=None):
         try:
             import win32api
             r = win32api.ShellExecute(0, "printto", pdf_path, f'"{printer_name}"', ".", 0)
-            if isinstance(r, int) and r > 32:    # >32 = sukces; <=32 (np. 31 NOASSOC) = brak verbu
+            if isinstance(r, int) and r > 32:    # >32 means success; 32 or less (31 NOASSOC) means no verb
                 time.sleep(4)
                 return True
         except Exception:
-            pass   # spadnij do fallbacku
-    # --- fallback: tymczasowy default + 'print' (najszerzej wspierany) ---
+            pass   # fall through to the fallback
+    # --- fallback: temporary default printer plus 'print', the most widely supported verb ---
     prev = None
     if printer_name:
         try:
@@ -2544,11 +2544,11 @@ def profile_path():
     """Profil wdrozeniowy lezacy OBOK exe - wzorzec ustawien dla nowej stacji."""
     return os.path.join(app_base_dir(), "pickcore_profile.json")
 
-# Klucze specyficzne dla stacji: NIE sa przenoszone miedzy komputerami.
+# Station-specific keys: NOT carried between machines.
 STATION_KEYS = {"scanner_allow", "printer", "zebra_printer", "analytics_owners"}
 
 def load_cfg():
-    # Pierwszy start na nowej maszynie: jesli nie ma configu, a obok exe lezy profil - zasiej z niego.
+    # First start on a new machine: with no config but a profile next to the exe, seed from it.
     try:
         if not CONFIG_PATH.exists() and os.path.exists(profile_path()):
             prof = json.loads(open(profile_path(), "r", encoding="utf-8").read())
@@ -2556,8 +2556,8 @@ def load_cfg():
                                       if k not in STATION_KEYS and not k.startswith("_")}}
             CONFIG_PATH.write_text(json.dumps(seed, indent=1, ensure_ascii=False), encoding="utf-8")
     except Exception as e:
-        # Awaria tutaj = nowa stacja startuje z pustym configem mimo profilu obok exe,
-        # czyli "zainstaluj i dziala" po cichu przestaje dzialac.
+        # A failure here means a new station starts with an empty config despite the profile next to the exe,
+        # so "install and it works" silently stops being true.
         note_io_fail("load_cfg(seed z profilu)", e)
     return _load_cfg_raw()
 
@@ -2567,32 +2567,32 @@ def _load_cfg_raw():
         except Exception: cfg = dict(DEFAULT_CFG)
     else:
         cfg = dict(DEFAULT_CFG)
-    # auto-foldery obok .exe jako domyslne, gdy puste -> "zainstaluj i dziala"
+    # folders next to the .exe are the default when unset, which keeps "install and it works" true
     pick_dir, pa_dir, _ = ensure_app_folders()
     if not cfg.get("archive_dir_pick"): cfg["archive_dir_pick"] = pick_dir
     if not cfg.get("archive_dir_pa"):   cfg["archive_dir_pa"]   = pa_dir
-    # Ta sama zasada dla pliku lokacji. JEDNA stacja publikuje bin_contents.csv,
-    # pozostale tylko go czytaja. Do 2.9 kazda stacja wymagala RECZNEGO wpisania
-    # sciezki w Settings i dlatego stacje Petera i Ernestasa nie mialy ZADNYCH
-    # sugestii binow. To nie byl blad w kodzie, tylko niewypelniona opcja.
-    # Kolejnosc szukania:
-    #   1. kopia obok exe - jest na liscie /XF instalatora, wiec przezywa update,
-    #   2. folder aktualizacji - tam kladzie ja Build-PickCore.ps1 (krok 5b).
-    # Sciezka wpisana recznie ma ZAWSZE pierwszenstwo i nie jest nadpisywana.
-    # Wyniku NIE zapisujemy do configu: przeniesienie zrodla jest wtedy wykrywane
-    # przy nastepnym starcie, a start nie robi niepotrzebnego zapisu na dysk.
+    # Same rule for the location file. ONE station publishes bin_contents.csv,
+    # the others only read it. Earlier versions required the path to be typed in
+    # manually in Settings, which is why some stations ended up with NO bin
+    # suggestions at all. Not a code defect, just an option nobody filled in.
+    # Search order:
+    #   1. the copy next to the exe - excluded from installer overwrites, so it survives updates,
+    #   2. the update folder, where the build script places it.
+    # A manually entered path ALWAYS wins and is never overwritten.
+    # The result is NOT written back to the config: moving the source is then detected
+    # on the next start, and startup avoids a pointless disk write.
     if not (cfg.get("bin_export_path") or "").strip():
         cands = [os.path.join(app_base_dir(), "bin_contents.csv")]
         upd = (cfg.get("update_dir") or "").strip()
         if upd: cands.append(os.path.join(upd, "bin_contents.csv"))
         for cand in cands:
-            # exists() na martwym udziale UNC potrafi przymulic, dlatego kopia
-            # lokalna jest sprawdzana PIERWSZA i zwykle konczy petle od razu.
+            # exists() on a dead UNC share can hang for seconds, so the local copy
+            # is checked FIRST and usually ends the loop immediately.
             try: found = os.path.exists(cand)
             except OSError: found = False
             if found:
                 cfg["bin_export_path"] = cand
-                cfg["_bin_export_auto"] = True     # slad dla Logs, nie ustawienie
+                cfg["_bin_export_auto"] = True     # a trace for Logs, not a setting
                 break
     return cfg
 def save_cfg(c): CONFIG_PATH.write_text(json.dumps(c, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -2643,14 +2643,14 @@ def process_pdf(pdf_path, cfg, customers, logfn=print, on_pick=None, on_putaway=
     dtype, hdr, source, rows, warns = parse_document(pdf_path)
     if dtype == "unknown" or not rows:
         logfn(f"✕ {name}: not a Pick/Put-away PDF (ignored)"); return False, "ignored"
-    learn_skus(rows)   # rejestr znanych SKU - fundament triage skanow (uczy sie z KAZDEGO dokumentu)
+    learn_skus(rows)   # known SKU registry - the foundation of scan triage, learning from EVERY document
     if dtype == "putaway":
         LAST_PUTAWAY["hdr"] = hdr; LAST_PUTAWAY["rows"] = list(rows)
         if on_putaway:
             try: on_putaway(hdr, list(rows))
             except Exception as e:
-                # To jest wejscie do kolejki FIFO pa_pending. Cichy blad = lista
-                # put-awayu przepada, a to juz raz sie zdarzylo (historia jakosci #8).
+                # This is the entry point to the pa_pending FIFO queue. A silent failure loses
+                # the put-away list entirely, which has happened once before.
                 logfn(f"   ! put-away queue hook failed: {e}")
                 note_io_fail("process_pdf(on_putaway)", e)
         sheet_html = build_putaway_html(hdr, source, rows)
@@ -2672,23 +2672,23 @@ def process_pdf(pdf_path, cfg, customers, logfn=print, on_pick=None, on_putaway=
     msg = (f"[{kind}] {hdr}: {len(rows)} lines -> archived {html_out.name}"
            + (f"  [{len(warns)} warnings]" if warns else ""))
     logfn("✓ " + msg); write_log_file(msg)
-    # przekaz itemy do stacji walidacji (skanowanie)
-    # tylko PICKI trafiaja do stacji walidacji - put-away to inny dokument (na pozniej)
+    # hand the items to the validation station (scanning)
+    # only PICKS reach the validation station - a put-away is a different document
     if on_pick and kind == "PICK":
         try:
-            remembered = load_serial_skus()    # SKU zapamietane recznie jako serializowane
+            remembered = load_serial_skus()    # SKUs manually marked as serialised
             items = [{"sku": r["item"], "need": int(r["qty"]), "bin": r.get("bin",""),
                       "scanned": 0,
                       "serial": is_radio(r["item"]) or _norm_sku(r["item"]) in remembered}
                      for r in rows if r.get("item")]
-            if items:                          # guard: pick bez pozycji nie moze wejsc do stacji (zombie)
+            if items:                          # guard: a pick with no lines must never enter the station (zombie document)
                 on_pick({"type": kind, "hdr": hdr, "title": title, "sub": sub, "items": items,
-                         "printed_ts": time.time()})   # kotwica cyklu: wydruk -> pierwszy skan = realny czas zbierania
+                         "printed_ts": time.time()})   # cycle anchor: print to first scan is the real picking time
             else:
                 logfn(f"   ! {hdr}: no scannable items — sheet archived, station skipped")
         except Exception as e:
             logfn(f"   ! could not load into station: {e}")
-    LAST_PRINT["html"] = str(html_out); LAST_PRINT["hdr"] = hdr   # do przycisku 'Print again'
+    LAST_PRINT["html"] = str(html_out); LAST_PRINT["hdr"] = hdr   # used by the 'Print again' button
     if cfg.get("auto_print"):
         try:
             tmp_pdf = Path(tempfile.gettempdir()) / f"{hdr}_print_{int(time.time())}.pdf"
@@ -2729,8 +2729,8 @@ def run_gui():
     cfg = load_cfg(); customers = load_customers()
     seen = set(); scan_state = {"last": 0.0}
 
-    # AppUserModelID PRZED utworzeniem okna - inaczej Windows grupuje pod python.exe
-    # i pokazuje domyslna ikone na pasku zadan zamiast naszej.
+    # AppUserModelID BEFORE the window is created - otherwise Windows groups it under python.exe
+    # and shows the default taskbar icon instead of ours.
     try:
         import ctypes
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("PickCore.PickCore.PickConverter.1")
@@ -2738,32 +2738,32 @@ def run_gui():
         pass
 
     root = tk.Tk(); root.title(APP_TITLE); root.geometry("1080x800"); root.configure(bg="#1a1714")
-    root.minsize(1040, 740)  # sidebar 182px + dol (pack-mode, Load/Print) nie moze znikac przy domyslnym rozmiarze
+    root.minsize(1040, 740)  # the rail plus the bottom bar must stay visible at the default window size
     try:
         ico = resource_path("pickcore.ico")
-        root.iconbitmap(default=ico)          # default= ustawia ikone dla okna I paska zadan
+        root.iconbitmap(default=ico)          # default= sets the icon for the window AND the taskbar
         root.wm_iconbitmap(ico)
     except Exception:
         pass
 
-    # ---- spojny system kolorow (design tokens) ----
+    # ---- a single colour system (design tokens) ----
     UI = {"bg":"#1a1714", "panel":"#241f1a", "panel2":"#2e2720", "border":"#45392c",
           "text":"#f2ece1", "muted":"#a99a84", "faint":"#7a6c58",
           "accent":"#2fb5a8", "ok":"#46d17f", "warn":"#f5b342", "err":"#ff5a5f", "serial":"#cf7fbf",
           "ok_bg":"#13301f", "warn_bg":"#332813", "err_bg":"#3a1416", "todo_bg":"#2a241e"}
 
     style = ttk.Style(); style.theme_use("clam")
-    # Treeview - wyzsze wiersze, czysta typografia, ciemne tlo
+    # Treeview - taller rows, clean typography, dark background
     style.configure("Pick.Treeview", background=UI["panel"], fieldbackground=UI["panel"],
                     foreground=UI["text"], rowheight=34, borderwidth=0, font=("Bahnschrift",11))
     style.configure("Pick.Treeview.Heading", background=UI["panel2"], foreground=UI["muted"],
                     relief="flat", font=("Bahnschrift",9,"bold"), padding=(6,6))
     style.map("Pick.Treeview.Heading", background=[("active", UI["panel2"])])
     style.map("Pick.Treeview", background=[("selected", "#243044")], foreground=[("selected", UI["text"])])
-    # Progressbar - grubszy, akcentowy
+    # Progressbar - thicker, in the accent colour
     style.configure("Pick.Horizontal.TProgressbar", troughcolor=UI["panel2"], background=UI["ok"],
                     borderwidth=0, thickness=18)
-    # ================== COCKPIT SHELL v3.0: sidebar + header + status bar ==================
+    # ================== COCKPIT SHELL: rail + header + status bar ==================
     class SideNav(tk.Frame):
         """Cockpit shell v1.1: zwijany rail ikonowy + pasek kontekstu nad trescia.
            Rail startuje waski (same ikony, etykieta w dymku), przypinany klikiem
@@ -2780,8 +2780,8 @@ def run_gui():
             self.rail.pack(side="left", fill="y"); self.rail.pack_propagate(False)
             tk.Frame(self, bg=UI["border"], width=1).pack(side="left", fill="y")
             right = tk.Frame(self, bg=UI["bg"]); right.pack(side="left", fill="both", expand=True)
-            # Pasek kontekstu: przy zwinietym railu to jedyne miejsce, gdzie widac
-            # pelna nazwe biezacego widoku. Bez niego ikony sa zagadka.
+            # Context bar: with the rail collapsed this is the only place showing
+            # the full name of the active view. Without it the icons are a guessing game.
             self.ctx = tk.Frame(right, bg=UI["bg"], height=36)
             self.ctx.pack(side="top", fill="x"); self.ctx.pack_propagate(False)
             self.ctx_ico = tk.Label(self.ctx, text="", fg=UI["accent"], bg=UI["bg"],
@@ -2796,7 +2796,7 @@ def run_gui():
             tk.Frame(right, bg=UI["border"], height=1).pack(side="top", fill="x")
             self.body = tk.Frame(right, bg=UI["bg"]); self.body.pack(side="top", fill="both", expand=True)
             self._items = []; self._cur = None
-        # ---- rejestracja pozycji (API bez zmian) ----
+        # ---- item registration (unchanged API) ----
         def _nav_register(self, pos, kind, frame, text, group, fkey, icon, cmd=None):
             it = {"kind": kind, "frame": frame, "text": text.strip(), "group": group,
                   "fkey": fkey, "icon": icon, "cmd": cmd}
@@ -2812,15 +2812,15 @@ def run_gui():
         def add_action(self, text, command, group="OPERATIONS", fkey=None, icon=""):
             self._nav_register(None, "action", None, text, group, fkey, icon, cmd=command)
 
-        # ---- zwijanie ----
+        # ---- collapsing ----
         def toggle(self):
             self.open = not self.open
             self.rail.config(width=(self.W_MAX if self.open else self.W_MIN))
             self._hide_tip(); self._rebuild()
 
         def _show_tip(self, it):
-            """Dymek z nazwa przy zwinietym railu. Toplevel bez dekoracji, bo
-               etykieta w srodku rail-a rozpychalaby go do szerokosci tekstu."""
+            """Tooltip with the item name while the rail is collapsed. An undecorated Toplevel, because
+               a label inside the rail would stretch it to the width of the text."""
             if self.open or not it.get("row"): return
             self._hide_tip()
             try:
@@ -2839,7 +2839,7 @@ def run_gui():
                 try: self._tip.destroy()
                 except Exception: pass
                 self._tip = None
-        # ---- rysowanie rail-a ----
+        # ---- rail rendering ----
         def _rebuild(self):
             for w in self.rail.winfo_children(): w.destroy()
             brand = tk.Frame(self.rail, bg=UI["panel"], height=46, cursor="hand2")
@@ -2893,7 +2893,7 @@ def run_gui():
                 w.bind("<Button-1>", lambda e, it=it: self._activate(it))
                 w.bind("<Enter>", lambda e, it=it: (self._hover(it, True), self._show_tip(it)))
                 w.bind("<Leave>", lambda e, it=it: (self._hover(it, False), self._hide_tip()))
-        # ---- stan wizualny ----
+        # ---- visual state ----
         def _is_on(self, it): return it["kind"] == "view" and it["frame"] is self._cur
         def _hover(self, it, on):
             if self._is_on(it) or "row" not in it: return
@@ -2918,7 +2918,7 @@ def run_gui():
                     self.ctx_lbl.config(text=it["text"])
                     self.ctx_key.config(text=(it["fkey"] or ""))
         def alert(self, text, on=True):
-            """Czerwona kropka przy pozycji nawigacji - cos wplynelo, a Ty jestes gdzie indziej."""
+            """A red dot on a nav item: something arrived in a view you are not currently in."""
             for it in self._items:
                 if it["text"] == text:
                     it["alert"] = bool(on)
@@ -2956,7 +2956,7 @@ def run_gui():
                     top.bind(f'<{it["fkey"]}>', lambda e, it=it: self._activate(it))
             top.bind("<Control-b>", lambda e: self.toggle())
 
-    # --- HEADER (globalny): brand | biezacy pick (przeniesiony z t1) | watcher | drukarka | operator ---
+    # --- HEADER (global): brand | current pick | watcher | printer | operator ---
     hdr = tk.Frame(root, bg=UI["panel"]); hdr.pack(side="top", fill="x")
     tk.Frame(root, bg=UI["border"], height=1).pack(side="top", fill="x")
     tk.Label(hdr, text="PickCore", fg=UI["accent"], bg=UI["panel"],
@@ -2974,7 +2974,7 @@ def run_gui():
     _hdr_prn_refresh()
     hdr_mid = tk.Frame(hdr, bg=UI["panel"]); hdr_mid.pack(side="left", fill="both", expand=True, padx=(14,8))
 
-    # --- STATUS BAR (globalny): ostatnie zdarzenie + skroty ---
+    # --- STATUS BAR (global): last event plus shortcuts ---
     sbar = tk.Frame(root, bg=UI["panel"]); sbar.pack(side="bottom", fill="x")
     tk.Frame(root, bg=UI["border"], height=1).pack(side="bottom", fill="x")
     status_lbl = tk.Label(sbar, text="Ready.", fg=UI["muted"], bg=UI["panel"],
@@ -2983,8 +2983,8 @@ def run_gui():
     tk.Label(sbar, text="F1-F9 — switch views", fg=UI["faint"], bg=UI["panel"],
              font=("Bahnschrift",8)).pack(side="right", padx=12)
 
-    live_ring = []; cloud_state = {"dirty": True}   # zasilanie synced folder live board (hook w logln)
-    web_alerts = {"pick": 0, "inbound": 0}          # liczniki powiadomien dla konsoli TC22
+    live_ring = []; cloud_state = {"dirty": True}   # feeds the synced-folder live board (hooked into logln)
+    web_alerts = {"pick": 0, "inbound": 0}          # notification counters for the handheld console
     hdr_scn = tk.Label(hdr, text="", fg=UI["faint"], bg=UI["panel"], font=("Cascadia Mono",9,"bold"))
     upd_state = {"ver": "", "info": ""}
     hdr_upd = tk.Label(hdr, text="", fg=UI["warn"], bg=UI["panel"], font=("Bahnschrift",9,"bold"), cursor="hand2")
@@ -2996,7 +2996,7 @@ def run_gui():
     bulk = {"on": False, "idx": None, "step": None}
     serial_mode = {"on": False, "radios": [], "active": None, "seen": set(), "history": []}
     new_picks = _queue.Queue()
-    log_q = _queue.Queue()          # P0: logi z watkow roboczych ida kolejka do glownego watku (Tk nie jest thread-safe)
+    log_q = _queue.Queue()          # logs from worker threads reach the main thread through a queue (Tk is not thread safe)
     flagged = {"wrong": set(), "noise": set(), "over": set()}   # dedupe zdarzen per pick: 3x ten sam zly kod = 1 zdarzenie
     pick_t = {"t0": None, "scans": []}   # telemetria picka: (t_offset, sku, bin, qty) - dane do slottingu, BEZ operatora
     session = {"on": False, "items": [], "active": None, "seen": set(), "await": None, "suggest": 0}
@@ -3186,7 +3186,7 @@ def run_gui():
     _btn_reprint.pack(side="left", padx=4)
     # Ikona bez etykiety nie wyglada na klikalna, wiec podswietlamy ja pod kursorem.
     # Tk nie ma natywnych dymkow, a Toplevel-dymek to nowy byt okienkowy do utrzymania -
-    # nie warty jednego przycisku. Jesli Peter albo Ernestas zapytaja "co to jest",
+    # not worth a dedicated button. If an operator asks what it is,
     # dopiero wtedy dokladamy wspolny mechanizm podpowiedzi dla calego UI.
     _btn_reprint.bind("<Enter>", lambda e: _btn_reprint.config(fg=UI["accent"]))
     _btn_reprint.bind("<Leave>", lambda e: _btn_reprint.config(fg=UI["faint"]))
@@ -3687,9 +3687,9 @@ def run_gui():
             _ex = (cfg.get("bin_export_path") or "").strip()
             if _ex:
                 n_ex, info_ex = merge_export_into_index(_ex)
-                # "auto" = sciezka znaleziona sama przez _load_cfg_raw, nie wpisana recznie.
-                # Przy porazce logujemy TEZ sciezke - "file not found" bez podania KTOREGO
-                # pliku kosztowalo na stacji Petera pol godziny zgadywania.
+                # "auto" = the path found by _load_cfg_raw itself, not typed in by hand.
+                # On failure the path is logged too: "file not found" without naming WHICH
+                # file once cost half an hour of guessing on a live station.
                 _src = " auto" if cfg.get("_bin_export_auto") else ""
                 logln(f"\U0001F4C4 Bin export{_src}: {n_ex} SKU ({info_ex})" if n_ex
                       else f"\u26A0 Bin export{_src}: {info_ex} \u2014 {_ex}")
@@ -5753,9 +5753,9 @@ def run_gui():
         # ktore powstaja lokalnie na kazdym stanowisku:
         #   - Logi\pickcore_events.jsonl to zrodlo dashboardu Impact,
         #   - Archiwum_PutAways to podpisane arkusze przyjec.
-        # Gdyby ktos zbudowal paczke po uruchomieniu aplikacji z dist (a wystarczy
-        # jeden smoke test), te foldery pojechalyby w paczce i wyczyscilyby archiwa
-        # Petera i Ernestasa. *.log nie wystarczy, bo zdarzenia sa w .jsonl.
+        # If anyone built a package after running the app from dist (a single smoke
+        # test is enough), those folders would ship inside it and wipe the archives
+        # on every station. *.log is not enough, because events live in .jsonl.
         dst = app_base_dir()
         bak = os.path.join(os.path.dirname(dst.rstrip("\\/")), f"PickCore_backup_{APP_VERSION}")
         exe = sys.executable if getattr(sys, "frozen", False) else ""
