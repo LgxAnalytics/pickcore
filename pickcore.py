@@ -1232,7 +1232,7 @@ def parse_shipment(path):
     """Sales shipment PDF into a data dictionary. The address is read POSITIONALLY (left column),
        because in linear text it interleaves with the reference column on the right."""
     if pdfplumber is None:
-        raise RuntimeError("Brak pdfplumber. Zainstaluj: py -3.14 -m pip install pdfplumber")
+        raise RuntimeError("pdfplumber is missing. Install it with: py -m pip install pdfplumber")
     with pdfplumber.open(path) as pdf:
         page = pdf.pages[0]
         words = page.extract_words()
@@ -1643,7 +1643,7 @@ bc_state = BC_STATE          # alias used by the GUI (the "refreshing" flag)
 BC_TTL = 900           # 15 min - bin contents do not change by the second
 
 def _bc_secret():
-    """Sekret wylacznie ze zrodel zewnetrznych. Brak sekretu = adapter wylaczony."""
+    """The secret comes from external sources only. No secret means the adapter stays off."""
     v = os.environ.get("PICKCORE_BC_SECRET")
     if v: return v.strip()
     try:
@@ -1742,6 +1742,8 @@ def load_bin_export(path):
                 if any(f in lc for f in frags): return c
             return None
         c_item = pick("itemno", "item", "nr")
+        # Header aliases cover English and Polish exports, so a file saved in either
+        # locale is read without a manual column mapping.
         c_bin  = pick("bincode", "bin", "lokacja")
         c_qty  = pick("qtybase", "quantitybase", "base", "quantity", "qty", "ilosc")
         c_desc = pick("description", "opis", "itemdescription")
@@ -1884,7 +1886,7 @@ def build_pickmap_heat_html(template_path, heat, unmapped, out_path):
     banner_un = ("" if not unmapped else
         f"<div style='position:fixed;right:14px;bottom:14px;z-index:9;background:#FFF7E6;"
         f"border:1px solid #C98A1B;border-radius:8px;padding:8px 12px;font:12px/1.5 Consolas,monospace;"
-        f"color:#5C420B'><b>Poza mapa ({sum(unmapped.values())} linii):</b>{un_rows}</div>")
+        f"color:#5C420B'><b>Off map ({sum(unmapped.values())} lines):</b>{un_rows}</div>")
     inject = (
         "\n<script>\n"
         f"PickMap.heatmap({payload});\n"
@@ -2008,7 +2010,7 @@ def build_pickmap_iso_html(heat, unmapped, out_path):
     un_html = "" if not unmapped else (
         '<div style="position:fixed;right:16px;bottom:16px;background:#241f1a;border:1px solid #C98A1B;'
         'border-radius:8px;padding:10px 14px;font:12px Consolas,monospace;color:#f5b342">'
-        f'<b>Poza mapa ({sum(unmapped.values())} linii)</b><br>'
+        f'<b>Off map ({sum(unmapped.values())} lines)</b><br>'
         + "<br>".join(f"{html.escape(k)} · {v}" for k, v in sorted(unmapped.items(), key=lambda kv: -kv[1])[:8]) + "</div>")
     doc = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>PickCore · Warehouse Heat 3D</title>
 <style>body{{margin:0;background:#1a1714;color:#f2ece1;font:14px 'Bahnschrift',sans-serif}}
@@ -2086,6 +2088,7 @@ def parse_customer_file(path):
     """Loads customers from Excel (.xlsx/.xls) or CSV. Returns {CODE: name}.
        Column A is the code, column B the name. The header row is skipped."""
     out = {}
+    # Same idea: accept both English and Polish header spellings.
     HEADERS = ("no.","no","code","kod","number","nr","customer","klient")
     ext = os.path.splitext(path)[1].lower()
     if ext in (".xlsx", ".xlsm", ".xls"):
@@ -2517,7 +2520,7 @@ def list_printers():
 # ==================================================================== config
 DEFAULT_CFG = {"watch_dir":"","archive_dir_pick":"","archive_dir_pa":"","printer":"","auto_print":False,
                "watcher_on":False,"name_filter":"Warehouse Pick*PI*","pa_filter":"PO*","euro_per_error":150,
-               "analytics_owners":["OPERATOR"],
+               "analytics_owners":[],
                }
 def _ver_tuple(v):
     """'1.10' > '1.9' - compared numerically, not lexically."""
@@ -3570,7 +3573,7 @@ def run_gui():
                         capture_output=True, text=True, timeout=300)
                     bc_q.put(("export", "ok" if r.returncode == 0 else f"kod {r.returncode}"))
                 except Exception as e:
-                    bc_q.put(("export", f"blad: {str(e)[:90]}"))
+                    bc_q.put(("export", f"error: {str(e)[:90]}"))
                 finally:
                     bc_state["refreshing"] = False
             threading.Thread(target=run, daemon=True).start()
@@ -4089,7 +4092,7 @@ def run_gui():
         if code: scan_var.set(code.strip()); on_scan()
 
     def toggle_serial():
-        """Reczne oznaczenie/odznaczenie itemu jako 'z numerem seryjnym' (laczone z auto-wykryciem).
+        """Manually flags or unflags an item as serialised (combined with auto-detection).
            When enabled it offers to REMEMBER the SKU for future picks."""
         if serial_mode["on"]: return
         cur = station["cur"]
@@ -4292,7 +4295,7 @@ def run_gui():
                     sess_save(); refresh_station(); scan_entry.focus_set(); return
             feedback("Nothing to undo.", "warn"); return
 
-        """Cofa OSTATNIO zeskanowany serial (z dowolnego radia)."""
+        """Undoes the MOST RECENT serial scan, from any unit."""
         if not serial_mode["on"]: return
         hist = serial_mode["history"]
         if not hist: feedback("Nothing to undo.", "warn"); return
@@ -4556,7 +4559,9 @@ def run_gui():
 
     # ---------- TAB: WAREHOUSE (slotting analytics) ----------
     _owners = [o.strip().upper() for o in (cfg.get("analytics_owners") or [])]
-    if get_picker() in _owners:
+    # An empty owner list means everyone: analytics is hidden only when the list
+    # actually names someone.
+    if not _owners or get_picker() in _owners:
         tware = tk.Frame(nb, bg=UI["bg"]); nb.add(tware, text="Warehouse", group="INSIGHTS", fkey="F7", icon="🏭")
         tk.Label(tware, text="Warehouse Intelligence — slotting analytics", fg=UI["accent"], bg=UI["bg"],
                  font=("Bahnschrift",15,"bold")).pack(pady=(12,1))
@@ -4716,10 +4721,10 @@ def run_gui():
         k=ks[max(0, kit_combo.current())]
         c=validate_copies(e_copies.get())
         if c is None:
-            messagebox.showerror("Copies","'Copies' musi byc liczba calkowita ≥ 1."); return
+            messagebox.showerror("Copies","'Copies' must be a whole number of 1 or more."); return
         zpl, trunc, fit = generate_kit_zpl(k["kit_id"], k["items"], c)
         if trunc and not messagebox.askyesno("Truncated assemblies",
-                f"Na etykiecie zmiesci sie tylko {fit}/{len(k['items'])} assemblies.\nKontynuowac drukowanie?"):
+                f"Only {fit}/{len(k['items'])} assemblies fit on the label.\nPrint anyway?"):
             return
         prn = prn_combo.get()
         if not prn or prn.startswith("["):
@@ -4995,7 +5000,7 @@ def run_gui():
                 _beep("ok")
         else:
             if p.get("sku") and not p.get("to"):
-                logln(f"\u26A0 Reloc: {p['sku']} porzucony (niedokonczony) \u2014 nowy item {code}")
+                logln(f"\u26A0 Reloc: {p['sku']} abandoned (incomplete) \u2014 new item {code}")
             rel["pend"] = {"sku": code}
             rel_feedback(f"ITEM {code} \u2014 scan the source bin (FROM).", "info"); _beep("line")
         _rel_pend_paint()
@@ -5046,7 +5051,7 @@ def run_gui():
     try:
         if os.path.exists(REL_PATH):
             rel["lines"] = list(json.loads(Path(REL_PATH).read_text(encoding="utf-8")).get("lines", []))
-            if rel["lines"]: logln(f"\U0001F500 Relocations: przywrocono {len(rel['lines'])} linii z sesji")
+            if rel["lines"]: logln(f"\U0001F500 Relocations: restored {len(rel['lines'])} lines from the session")
     except Exception: pass
     rel_rebuild()
 
@@ -5173,7 +5178,7 @@ def run_gui():
             _nazwa = os.path.basename(f)
             sb_match.config(text="\u26A0 to nie wyglada na Sales Shipment z BC", fg=UI["warn"])
             sb_file.config(text=_nazwa, fg=UI["warn"])
-            logln(f"\u26A0 Forwarder: {_nazwa} \u2014 brak bloku 'Delivery Address', parser nie ma czego czytac")
+            logln(f"\u26A0 Forwarder: {_nazwa} \u2014 no 'Delivery Address' block, nothing for the parser to read")
             messagebox.showwarning("Forwarder",
                 f"Could not read the delivery address from:\n{_nazwa}\n\n"
                 "The parser looks for a 'Delivery Address' block and did not find one.\n"
@@ -5402,7 +5407,7 @@ def run_gui():
                 if os.path.normcase(os.path.abspath(val)) == os.path.normcase(os.path.join(base, _name)):
                     hide.add(_row)
             except Exception as e:
-                logln(f"⚠ Settings: nie moge porownac sciezki {_key}: {str(e)[:60]}")
+                logln(f"⚠ Settings: cannot compare path {_key}: {str(e)[:60]}")
         # The location file usually lives in the update folder rather than next to the exe, hence a separate trace.
         if cfg.get("_bin_export_auto"):
             hide.add(22)
@@ -5720,12 +5725,12 @@ def run_gui():
             exes = [f for f in os.listdir(src) if f.lower().endswith(".exe")]
             internal = os.path.join(src, "_internal")
             probs = []
-            if not exes: probs.append("brak pliku .exe")
-            if not os.path.isdir(internal): probs.append("brak folderu _internal")
+            if not exes: probs.append("missing .exe")
+            if not os.path.isdir(internal): probs.append("missing _internal folder")
             else:
                 if len(os.listdir(internal)) < 5: probs.append("_internal wyglada na niekompletny")
             if exes and os.path.getsize(os.path.join(src, exes[0])) < 500_000:
-                probs.append("exe podejrzanie maly (placeholder synced folder?)")
+                probs.append("exe suspiciously small (cloud placeholder?)")
             # The installer runs robocopy /MIR on the exe folder, so a file MISSING from the
             # package is DELETED on the station, not skipped. Hence the check
             # obecnosc I rozmiar: synced folder potrafi dostarczyc zaslepke 0-bajtowa.
@@ -5734,13 +5739,13 @@ def run_gui():
             for _f, _min in (("Items.csv", 100_000), ("customers.csv", 1_000)):
                 _p = os.path.join(src, _f)
                 if not os.path.exists(_p):
-                    probs.append(f"brak {_f}")
+                    probs.append(f"missing {_f}")
                 elif os.path.getsize(_p) < _min:
-                    probs.append(f"{_f} podejrzanie maly (placeholder synced folder?)")
+                    probs.append(f"{_f} suspiciously small (cloud placeholder?)")
             if probs:
                 messagebox.showwarning("Update",
                     "The update package looks incomplete:\n  \u2022 " + "\n  \u2022 ".join(probs) +
-                    "\n\nIf the source is synced folder, wait for sync to finish\n"
+                    "\n\nIf the source is a synced folder, wait for sync to finish\n"
                     "or set the folder to 'Always keep on this device'.")
                 logln(f"\u26A0 Update {ver} halted: {', '.join(probs)}")
                 return
@@ -5767,7 +5772,7 @@ $pid_ = {os.getpid()}
 Write-Host ""
 Write-Host "  PickCore - aktualizacja {APP_VERSION} -> {ver}" -ForegroundColor Cyan
 Write-Host "  ---------------------------------------------"
-Write-Host "  [1/4] Czekam na zamkniecie aplikacji (PID $pid_)..."
+Write-Host "  [1/4] Waiting for the application to close (PID $pid_)..."
 for ($i=0; $i -lt 60; $i++) {{ if (-not (Get-Process -Id $pid_ -EA SilentlyContinue)) {{ break }}; Start-Sleep -Milliseconds 500 }}
 Start-Sleep -Seconds 1
 Write-Host "  [2/4] Kopia zapasowa..."
@@ -5776,7 +5781,7 @@ Copy-Item "{dst}" "{bak}" -Recurse -Force
 Write-Host "  [3/4] Kopiowanie nowej wersji..."
 robocopy "{src}" "{dst}" /MIR /XF config.json pickcore_profile.json bin_contents.csv *.log *.jsonl /XD Logi Archive_Picks Archive_PutAways /NFL /NDL /NJH /NJS
 if ($LASTEXITCODE -ge 8) {{
-  Write-Host "BLAD kopiowania - przywracam kopie zapasowa"
+  Write-Host "COPY FAILED - restoring the backup"
   robocopy "{bak}" "{dst}" /MIR /NFL /NDL /NJH /NJS
 }}
 Write-Host "  [4/4] Uruchamiam PickCore..." -ForegroundColor Green
@@ -5883,7 +5888,7 @@ Start-Sleep -Seconds 2
     tk.Label(sf,text="Secret is NEVER stored here - set env var PICKCORE_BC_SECRET or Windows Credential Manager",
              fg="#7a6c58",bg="#1a1714",font=("Bahnschrift",8)).grid(row=21,column=1,sticky="w")
     v_cld=tk.BooleanVar(value=bool(cfg.get("cloud_publish")))
-    tk.Checkbutton(sf,text="Publish live board to synced folder folder (pickcore_live.html)",variable=v_cld,fg="#f2ece1",bg="#1a1714",
+    tk.Checkbutton(sf,text="Publish the live board to the synced folder (pickcore_live.html)",variable=v_cld,fg="#f2ece1",bg="#1a1714",
                    selectcolor="#2a241e",activebackground="#1a1714").grid(row=11,column=1,sticky="w",pady=2)
     v_http=tk.BooleanVar(value=bool(cfg.get("http_serve")))
     _htfr=tk.Frame(sf,bg="#1a1714")
@@ -5899,7 +5904,7 @@ Start-Sleep -Seconds 2
     v_cldd=tk.StringVar(value=cfg.get("cloud_dir") or "")
     tk.Entry(_cldfr,textvariable=v_cldd,width=44).pack(side="left")
     def _pick_cloud_dir():
-        d=filedialog.askdirectory(title="Choose synced folder-synced folder")
+        d=filedialog.askdirectory(title="Choose the synced folder")
         if d: v_cldd.set(d)
     tk.Button(_cldfr,text="\u2026",command=_pick_cloud_dir,bg="#5a4a38",fg="#cfc3b0",relief="flat").pack(side="left",padx=4)
 
@@ -6269,13 +6274,13 @@ Start-Sleep -Seconds 2
                     if c.get("i") is not None:
                         try: web_focus["i"] = int(c.get("i"))
                         except (TypeError, ValueError):
-                            logln(f"⚠ Console: zly indeks linii w poleceniu view: {c.get('i')!r}")
+                            logln(f"⚠ Console: bad line index in view command: {c.get('i')!r}")
                 elif op == "target":
                     try:
                         web_focus["i"] = int(c.get("i")); web_focus["view"] = "inbound"
                         web_focus["ts"] = time.time()
                     except (TypeError, ValueError):
-                        logln(f"⚠ Console: zly indeks linii w poleceniu target: {c.get('i')!r}")
+                        logln(f"⚠ Console: bad line index in target command: {c.get('i')!r}")
                 elif op == "rel_qty":
                     try:
                         i, n = int(c.get("i", -1)), int(c.get("n", 0))
@@ -6301,7 +6306,7 @@ Start-Sleep -Seconds 2
                         line = cur["items"][i]
                         remaining = int(line["need"]) - int(line["scanned"])
                         if n > remaining:
-                            logln(f"\u2715 Handheld BULK zablokowany: {line['sku']} +{n}, brakuje tylko {remaining}")
+                            logln(f"\u2715 Handheld BULK blocked: {line['sku']} +{n}, only {remaining} outstanding")
                             log_event("BULK_BLOCKED", sku=line["sku"], scanned_qty=n, remaining=remaining,
                                       pick=cur.get("title",""), doc=cur.get("hdr",""), src="handheld")
                             feedback(f"BLOCKED: +{n} > remaining {remaining} ({line['sku']})", "err"); _beep("err")
@@ -6723,7 +6728,7 @@ pull();setInterval(pull,1500);
         threading.Thread(target=_http_srv, args=(int(cfg.get("http_port") or 8080),), daemon=True).start()
 
     def _net_boot_report():
-        """v1.0: jawny raport uslug sieciowych w Logs - koniec cichych porazek startu."""
+        """An explicit network-services report in Logs, so a failed start is never silent."""
         if cfg.get("scanner_listen"):
             if scanner_state.get("on"):
                 logln(f"\U0001F4E1 Scanner listener ON \u00B7 DataWedge IP output \u2192 {local_ip()}:{cfg.get('scanner_port') or 5577}")

@@ -24,6 +24,45 @@ repository.
 | Star schema export | exports to a star model for slotting analytics |
 | Label generator | ZPL labels for Zebra printers, generated natively |
 
+## What it looks like
+
+The navigation rail on the left starts collapsed to icons and expands with
+`Ctrl+B`; the bar above the content carries the active view and its function key.
+
+**Pick Station** — the scanning loop: one line at a time, scan validation with
+variant tolerance, bulk and serial modes, and a triage that separates a real
+error from noise.
+
+![Pick Station](docs/img/01-pick-station.png)
+
+**Impact** — what the validation layer caught and prevented, over a rolling two
+weeks. The euro figure is an estimate driven by a configurable cost per error,
+not a claim.
+
+![Impact dashboard](docs/img/03-impact.png)
+
+**Warehouse** — slotting analytics on process data only: ABC ranking by pick
+frequency, heat per zone, access cost from single-line picks, and co-picked
+pairs that suggest what belongs next to what.
+
+![Warehouse analytics](docs/img/04-warehouse.png)
+
+**Put-away** — the inbound side: an editable grid with a bin field per line and
+suggested bins pulled from local history, an ERP export, or the API.
+
+![Put-away](docs/img/02-put-away.png)
+
+All screenshots come from a real run on synthetic data. Reproduce them with:
+
+```
+python demo_seed.py     # writes Logs/pickcore_events.jsonl (14 days of events)
+python pickcore.py      # F6 for Impact, F7 for Warehouse, then Analyze
+```
+
+`demo_seed.py` invents everything it writes: the SKUs use the example catalogue
+prefixes, the locations follow the demo layout in `ISO_BLOCKS`, and the volumes
+are made up.
+
 ## Architecture
 
 A single process with worker threads for anything that blocks: directory
