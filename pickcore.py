@@ -119,7 +119,7 @@ def log_event(etype, **data):
         note_io_fail(f"log_event({etype})", e)
 
 def load_events():
-    """Wczytuje wszystkie zdarzenia z pliku JSONL."""
+    """Loads every event from the JSONL file."""
     out = []
     try:
         p = events_path()
@@ -155,7 +155,7 @@ FURNITURE = re.compile(r"(PICKING LIST|Warehouse Activity|Location Code|^No\.$|^
 
 def _to_qty(s):
     """Ilosc z komorki QTY, tolerancyjnie na separatory tysiecy ('1,000' / '1.000' -> 1000).
-       Zwraca int albo None gdy to nie liczba."""
+       Returns an int, or None when the value is not a number."""
     s = (s or "").strip()
     if not re.fullmatch(r"[\d.,\s]+", s): return None
     digits = re.sub(r"[^\d]", "", s)
@@ -259,7 +259,7 @@ def parse_bc_lines_xlsx(path):
     """Zrodlo PRAWDY: eksport Lines z karty picka BC (Lines -> Open in Excel).
        Picking-list PDF agreguje linie per (item,bin) PONAD orderami i gubi przypisania AS
        (a real case: 2+6 units collapsed to "8" under a single assembly). XLSX carries the full structure.
-       Bierzemy tylko Action Type=Take (zebranie z binu); Place=odlozenie (DISPATCH/ASSEMBLY)."""
+       Only Action Type=Take is taken (picked from a bin); Place is a put-down (DISPATCH/ASSEMBLY)."""
     import openpyxl
     wb = openpyxl.load_workbook(path, data_only=True, read_only=True)
     ws = wb.active
@@ -303,7 +303,7 @@ def parse_document(path):
         return parse_bc_lines_xlsx(path)
     """Dispatcher: wykrywa typ i routuje do wlasciwego parsera.
        Zwraca (doc_type, header_no, source/'', rows, warnings).
-       Typ szukany na WSZYSTKICH stronach (header bywa nie na str.1)."""
+       The type is searched on ALL pages - the header is not always on page 1."""
     dt = "unknown"
     with pdfplumber.open(path) as pdf:
         for page in pdf.pages:
@@ -341,8 +341,8 @@ def order_list(rows):
     return out
 
 def primary_order(rows, header_no):
-    """Glowny numer (header + nazwa pliku): pierwszy SO, inaczej pierwsze zlecenie, inaczej PI.
-       Preferuje SO (sales order) bo po nim szukamy zlecenia w BC."""
+    """Primary number (header plus file name): first sales order, else first job, else shipment.
+       The sales order is preferred, because that is the key used to look the job up in the ERP."""
     orders = order_list(rows)
     so = [o for o in orders if o.upper().startswith("SO")]
     if so: return so[0]
@@ -351,7 +351,7 @@ def primary_order(rows, header_no):
 
 def bin_sort_key(b):
     """Natural location order: 01-D11-A1 sorts before 01-D2-A1 lexically, but a walk route reverses it.
-       Rozbijamy na segmenty i porownujemy liczby jako liczby (jak na wydruku)."""
+       Split into segments and compare numbers as numbers, the way they read on the printout."""
     out = []
     for seg in re.split(r"[-_/ ]+", (b or "").upper()):
         m = re.match(r"^([A-Z]*)(\d*)([A-Z]*)$", seg)
@@ -362,7 +362,7 @@ def bin_sort_key(b):
     return out
 
 def _norm_sku(s):
-    """Kanoniczna normalizacja SKU: wielkie litery, bez sufiksu -ASM, bez markerow regionu
+    """Canonical SKU normalisation: upper case, no -ASM suffix, no region markers
        ('MDR11SDGANQ1AN EU' na liscie = skan 'MDR11SDGANQ1AN'), bez spacji.
        Marker = krotkie (<=3) czysto-literowe tokeny po pierwszym (EU, UK, NA...)."""
     s = (s or "").strip().upper()
@@ -382,7 +382,7 @@ def sku_match(code, sku):
        - oba naraz; plus marker regionu na LISCIE ('MDR11SDGANQ1AN EU' = skan bazy).
        BEZPIECZNIK: tolerancje TYLKO dla SKU zawierajacych litery (warianty wystepuja na urzadzeniach OEM).
        Czysto-cyfrowe SKU (katalog dostawcy: 900000123, 900000456) = wylacznie DOKLADNE dopasowanie,
-       bo cyfrowa przestrzen jest gesta i fuzzy moglby zaliczyc INNY istniejacy item."""
+       because the numeric space is dense and a fuzzy match could accept a DIFFERENT real item."""
     c, s = _norm_sku(code), _norm_sku(sku)
     if not c or not s: return False
     if c == s: return True                                          # exact (any format)
@@ -410,7 +410,7 @@ def qty_speed_ok(times_ms):
     return mx <= QTY_SPEED_MAX_GAP_MS, n, int(mx), int(med)
 
 def parse_scanned_qty(code):
-    """Ilosc z kodu QTY skanera. Format: 'Q'+liczba (Q30), 'qty'+liczba (qty20) LUB sama liczba (30).
+    """Quantity from a scanner QTY code. Formats: 'Q'+number (Q30), 'qty'+number (qty20) or a bare number (30).
        UWAGA anti-cheat: gdy dopuszczamy samą liczbę, format przestaje chronic - caly ciezar bierze
        lock predkosci (skaner wysyla blyskawicznie, reczne '30' ma odstepy >50ms)."""
     c = (code or "").strip()
@@ -432,15 +432,15 @@ ACCESSORY_PREFIXES = ("PMPN","PMNN","PMKN","PMLN","PMAD","PMAE","PMMN","PMDN",
 def looks_like_sku(code):
     """Structural recognition of an OEM part BY PREFIX (device or accessory).
        Domyka luke rozruchowa rejestru: zly item z rodziny katalogowej jest bledem
-       nawet ZANIM rejestr go pozna (np. PMPN4297A gdy pick ma PMPN4289B)."""
+       even BEFORE the registry has seen it (for example a near-miss catalogue number one digit apart)."""
     c = _norm_sku(code)
     return c.startswith(RADIO_PREFIXES) or c.startswith(ACCESSORY_PREFIXES)
 
 SERIAL_MIN, SERIAL_MAX = 6, 18
 def valid_serial(code, pick_skus=None):
-    """Czy kod wyglada na poprawny numer seryjny (a nie SKU/qty/smiec).
+    """Whether a code looks like a valid serial number rather than a SKU, a qty or noise.
        Zwraca (True,'') albo (False, powod). Lapie: zly format zamiast serialu.
-       pick_skus = lista SKU z picka (do wykrycia, ze ktos zeskanowal SKU zamiast seriala)."""
+       pick_skus = the SKUs on the pick, used to detect a SKU scanned in place of a serial."""
     c = (code or "").strip(); pick_skus = pick_skus or []
     if len(c) < SERIAL_MIN: return False, f"too short ({len(c)} chars)"
     if len(c) > SERIAL_MAX: return False, f"too long ({len(c)} chars)"
@@ -452,7 +452,7 @@ def valid_serial(code, pick_skus=None):
     return True, ""
 
 def bc_serial_line(serial):
-    """Wiersz BC Item Tracking Lines dla POJEDYNCZEJ sztuki (single):
+    """An Item Tracking Lines row for a SINGLE unit:
        Serial No <TAB> Availability,Serial=Yes <TAB> Lot No(pusty) <TAB> Availability,Lot=Yes <TAB> Qty(Base)=1 <TAB> Qty to Handle=1.
        Format potwierdzony realnym eksportem BC."""
     return f"{serial}\tYes\t\tYes\t1\t1"
@@ -492,7 +492,7 @@ def save_serial_skus(s):
 # ---------- KNOWN SKU REGISTRY (learns passively from every pick/put-away) ----------
 def load_known_skus():
     """Katalog SKU zebranych ze wszystkich przetworzonych dokumentow. Fundament triage:
-       kod NIE na picku, ale W rejestrze = prawdziwy zly item; poza rejestrem = szum."""
+       a code NOT on the pick but IN the registry is a genuine wrong item; outside it, noise."""
     if KNOWN_SKUS_PATH.exists():
         try: return set(json.loads(KNOWN_SKUS_PATH.read_text(encoding="utf-8")))
         except Exception: return set()
@@ -500,7 +500,7 @@ def load_known_skus():
 SKU_DESC = {}
 
 def load_sku_desc():
-    """Rejestr opisow: {SKU: opis}. Zrodlo - kazdy przetworzony dokument BC."""
+    """Description registry: {SKU: description}, fed by every processed document."""
     global SKU_DESC
     if SKU_DESC: return SKU_DESC
     try:
@@ -511,7 +511,7 @@ def load_sku_desc():
     return SKU_DESC
 
 def sku_desc(sku):
-    """Opis itemu, jesli znany. Pusty string zamiast bledu - opis jest wygoda, nie wymogiem."""
+    """Item description when known. An empty string rather than an error: it is a convenience, not a requirement."""
     return (load_sku_desc().get(_norm_sku(sku or "")) or "").strip()
 
 def learn_sku_desc(rows):
@@ -530,7 +530,7 @@ def learn_sku_desc(rows):
 
 def import_item_descriptions(path):
     """Import katalogu itemow z BC (kolumny: No.;Description). Wypelnia rejestr opisow OD RAZU,
-       zamiast czekac, az SKU przewinie sie przez picki. Separator wykrywany (; , TAB |)."""
+       instead of waiting for the SKU to appear in a pick. Separator auto-detected (; , TAB |)."""
     import csv as _csv
     try:
         if not path or not os.path.exists(path):
@@ -567,7 +567,7 @@ def import_item_descriptions(path):
         return 0, f"read error: {str(e)[:80]}"
 
 def learn_skus(rows):
-    """Dopisuje SKU z przetworzonego dokumentu do rejestru (tylko gdy sa nowe)."""
+    """Adds SKUs from a processed document to the registry, only when they are new."""
     learn_sku_desc(rows)
     try:
         known = load_known_skus()
@@ -585,7 +585,7 @@ def load_bulk_profile():
         except Exception: return {}
     return {}
 def learn_bulk(sku, qty):
-    """Zapamietuje qty bulka dla SKU (ostatnie 20 obserwacji)."""
+    """Remembers the bulk qty for a SKU, keeping the last 20 observations."""
     try:
         if qty < 2: return
         p = load_bulk_profile(); k = _norm_sku(sku)
@@ -600,14 +600,14 @@ def bulk_suggest(sku):
     return True, _C(p).most_common(1)[0][0]
 
 def classify_scan(code, pick_skus=None, known=None):
-    """TRIAGE nietrafionego skanu - rozdziela PRAWDZIWY blad od szumu:
+    """TRIAGE of a scan that missed - separates a REAL error from noise:
        'qty'     - kod ilosci (Q30) poza bulkiem            -> szum
        'sku'     - SKU z rejestru znanych, nie na tym picku -> PRAWDZIWY ZLY ITEM
        'numeric' - same cyfry NIEZNANE rejestrowi (EAN itp.)-> szum
        'serial'  - wyglada na numer seryjny                 -> szum (za wczesnie zeskanowany)
        'unknown' - nierozpoznany                            -> nie liczony jako strata
        KOLEJNOSC MA ZNACZENIE: rejestr sprawdzany PRZED testem cyfrowym, bo katalog zawiera
-       tez czysto-cyfrowe SKU (katalog dostawcy: 900000123) - to sa realne zle itemy, nie EAN."""
+       purely numeric supplier SKUs count too - those are real wrong items, not EAN codes."""
     c = (code or "").strip()
     if not c: return "unknown"
     known = load_known_skus() if known is None else known
@@ -631,7 +631,7 @@ def export_star_schema(out_dir):
     """Eksport modelu gwiazdy (star schema) z telemetrii do CSV - gotowe pod Power BI / DuckDB / SQL.
        Fakt: fact_pick_lines (ziarno = jedna linia picka). Wymiary: dim_item, dim_zone, dim_date, dim_pick.
        To jest 'jezyk rozmowy kwalifikacyjnej' + warstwa ladowania do BI jednym ruchem.
-       Zwraca (sciezki[], n_faktow) albo ([], 0) gdy brak danych."""
+       Returns (paths[], fact_count), or ([], 0) when there is no data."""
     import csv
     from datetime import datetime as _dt
     tele = [e for e in load_events() if e.get("type") == "PICK_TELEMETRY" and e.get("lines")]
@@ -853,7 +853,7 @@ def _embedded_template():
 PICKMAP_LOC = re.compile(r"^\d{2}-[A-Z]\d{2}-[A-Z]\d$")   # ZZ-RPP-LS grammar (matches the template data-loc)
 
 def pickmap_heat_data():
-    """Agreguje telemetrie do {dokladna_lokacja: liczba_WIZYT} - dokladnie to,
+    """Aggregates telemetry into {exact_location: VISIT count} - exactly what
        czego oczekuje PickMap.heatmap() (czestotliwosc WIZYT).
        Kody spoza gramatyki (CROSSDOCKING/WARRANTY/...) -> unmapped (pokazywane w banerze)."""
     from collections import Counter
@@ -871,7 +871,7 @@ def pickmap_heat_data():
 # ================= KIT LABELS (natywny port Label Selector HG v11.1) =================
 # Recovered from v11: hardcoded dimensions/DPI, DESC_MAP, ZPL generator with a truncation flag,
 # copies validation, audit CSV, RAW printing. Fixes: (1) kit source is order-level grouping
-# orderowe PickCore (nie kruchy parser sasiedztwa), (2) log w Logi\, (3) drukarka w cfg.
+# rather than a brittle adjacency parser, (2) logging into Logs\, (3) printer taken from cfg.
 LABEL_W_MM, LABEL_H_MM, LABEL_DPI = 40, 30, 203
 _DPMM = 8                                   # 203dpi is about 8 dots/mm (GK420d)
 LABEL_PW, LABEL_LL = LABEL_W_MM*_DPMM, LABEL_H_MM*_DPMM      # 320 x 240
@@ -886,7 +886,7 @@ DESC_MAP = {"CHARGER":("CHGR","CHARGER","DESKTOP"),
             "MICROPHONE":("MIC","MICROPHONE","REMOTE"),
             "POWER SUPPLY":("POWER","SUPPLY","ADAPTER")}
 def standardize_description(desc):
-    """Kanoniczna nazwa komponentu na etykiecie (mapa slow-kluczy z v11)."""
+    """Canonical component name for the label, from a keyword map."""
     u = (desc or "").upper()
     for label, kws in DESC_MAP.items():
         if any(k in u for k in kws): return label
@@ -894,7 +894,7 @@ def standardize_description(desc):
     return (t[:15] + "…") if len(t) > 16 else t
 
 def extract_label_kits(rows):
-    """Kity do etykiet z JUZ sparsowanych linii picka (grupowanie orderowe jak arkusz).
+    """Label kits built from ALREADY parsed pick lines, grouped by order like the sheet.
        -> [{'kit_id': radio_sku, 'order': AS..., 'items': [{'sku','desc'},...]}]"""
     from collections import OrderedDict as _OD
     g=_OD()
@@ -911,7 +911,7 @@ def extract_label_kits(rows):
     return kits
 
 def generate_kit_zpl(kit_id, items, copies):
-    """(zpl, truncated, n_fit) - header + linia + wiersze 'SKU  - DESC'; ^PQ=copies."""
+    """(zpl, truncated, n_fit) - header, a line, then 'SKU  - DESC' rows; ^PQ=copies."""
     y = HEADER_Y
     body, fit = [], 0
     for it in items:
@@ -956,11 +956,11 @@ def append_print_log(kit_id, copies, printer, status):
             w.writerow([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), kit_id, copies, printer, status])
     except Exception: pass
 
-# ---------------- AUTOSTART Z WINDOWS (HKCU\\...\\Run - bez uprawnien admina) ----------------
+# ---------------- WINDOWS AUTOSTART (HKCU\\...\\Run - no admin rights needed) ----------------
 _RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 _RUN_VAL = "PickCore"
 def _autostart_target():
-    """Sciezka do uruchamiania: exe (frozen) albo skrypt w trybie dev."""
+    """Launch path: the frozen exe, or the script when running from source."""
     if getattr(sys, "frozen", False): return sys.executable
     return os.path.abspath(sys.argv[0])
 def autostart_get():
@@ -1030,7 +1030,7 @@ def parse_shipment_pdf(path):
 def generate_shipment_zpl(kit_id, items, w_mm, h_mm, dpi, copies):
     """ZPL etykiety zawartosci kitu, konfigurowalne W/H/DPI (dziedzictwo v10.2).
        Zwraca (zpl, shown, total). Przy obcieciu drukuje marker '+N more'
-       zamiast cichego break jak w oryginale."""
+       instead of the silent break the original had."""
     mult = 8 if int(dpi) == 203 else 12
     pw, ll = int(w_mm) * mult, int(h_mm) * mult
     z = ["^XA", f"^PW{pw}", f"^LL{ll}", "^CI28",
@@ -1073,7 +1073,7 @@ POSTCODE_RULES = [
 ]
 
 def split_postcode(line, country=""):
-    """Zwraca (kod, miasto). Najpierw proba wzorca dla kraju, potem heurystyka ogolna."""
+    """Returns (postcode, city). Country pattern first, then a general heuristic."""
     toks = (line or "").split()
     if not toks:
         return "", ""
@@ -1121,9 +1121,9 @@ PC_DETECT = [
 
 
 def _looks_like_person(line):
-    """Osoba kontaktowa vs dzielnica/dodatkowa linia adresu. Nazwiska w tych dokumentach
+    """Contact person versus district or extra address line. Person names in these documents
        maja 2-3 czlony pisane wielka litera ("Edwin Venema", "Daniel Kantor Kanon"),
-       a dzielnice sa jednoczlonowe ("Carnide"). Pozycja wzgledem ulicy nie wystarcza."""
+       while districts are single words. Position relative to the street is not enough on its own."""
     # Name particles such as "de", "van", "von", "da" are lowercase - still a person
     PARTICLES = {"de", "van", "der", "den", "von", "la", "le", "du", "di", "da", "dos", "el", "ter"}
     t = (line or "").split()
@@ -1139,9 +1139,9 @@ def _looks_like_person(line):
     return True
 
 def classify_address(lines):
-    """Blok 'Delivery Address' NIE ma stalej struktury. Klasyfikujemy linie po charakterze,
+    """The 'Delivery Address' block has NO fixed structure. Lines are classified by character,
        a pozostale ustawiamy WZGLEDEM ULICY - to jedyna stabilna os w tych dokumentach:
-       to, co PRZED ulica, to osoba kontaktowa; to, co PO niej, to dzielnica/dodatkowa linia."""
+       whatever sits BEFORE the street is the contact person, whatever sits AFTER it is a district or extra line."""
     ln = [l.strip() for l in lines if l and l.strip()]
     out = {"company": "", "contact": "", "address1": "", "address2": "", "address3": "",
            "postcode": "", "city": "", "country": ""}
@@ -1200,9 +1200,9 @@ def classify_address(lines):
             out["address3"] = extra[1]
     return out
 def _value_below(words, page_width, label_tokens, ymax=26):
-    """Wartosc lezaca pod etykieta. Bierze CALY WIERSZ, nie pierwsze slowo:
+    """The value sitting below a label. Takes the WHOLE ROW, not the first word:
        "Your Order No" potrafi miec wartosc wieloczlonowa (np. ORDER 260806/VOORRAAD).
-       Kolumne (lewa/prawa) ustalamy po pozycji etykiety, zeby nie wciagnac tekstu z sasiedniej."""
+       The column is determined from the label position, so text from the neighbouring one is not pulled in."""
     mid = page_width / 2.0
     seq = list(label_tokens)
     for i, w in enumerate(words):
@@ -1227,7 +1227,7 @@ def _value_below(words, page_width, label_tokens, ymax=26):
 
 def parse_shipment(path):
     """Sales Shipment PDF -> slownik danych. Adres bierzemy POZYCYJNIE (lewa kolumna),
-       bo w tekscie liniowym miesza sie z prawa kolumna referencji."""
+       because in linear text it interleaves with the reference column on the right."""
     if pdfplumber is None:
         raise RuntimeError("Brak pdfplumber. Zainstaluj: py -3.14 -m pip install pdfplumber")
     with pdfplumber.open(path) as pdf:
@@ -1310,7 +1310,7 @@ def _cap(value, key):
 
 
 def build_payload(data, ui):
-    """Ladunek dla bookmarkletu. Klucze = pola formularza Forwarder."""
+    """Payload for the bookmarklet. Keys map to the forwarder form fields."""
     # The parcel description is a fixed constant rather than a per-item value:
     # forwarder portals validate it against a commercial description list.
     desc = ui.get("description") or "Two way radios"
@@ -1356,7 +1356,7 @@ _CUST_SUFFIX = re.compile(
     r"lda|slu|sl|kg|co|inc|ug|mbh|holding|group)\b\.?", re.I)
 
 def _cust_key(name):
-    """Klucz nazwy odporny na warianty zapisu: 'Kommago B.V.' = 'Kommago BV' = 'KOMMAGO'."""
+    """Name key tolerant of spelling variants: 'Example B.V.' = 'Example BV' = 'EXAMPLE'."""
     n = (name or "").lower()
     n = n.split(" t/a ")[0].split("(")[0]
     n = _CUST_SUFFIX.sub(" ", n)
@@ -1365,7 +1365,7 @@ def _cust_key(name):
 
 def load_customer_db(path):
     """Kartoteka klientow z BC (No.;Name;Address;City;Contact;Phone No.;Email).
-       Sluzy WYLACZNIE do uzupelniania brakow - adres z dokumentu ma zawsze pierwszenstwo."""
+       Used ONLY to fill gaps - the address on the document always wins."""
     import csv as _csv
     if not path or not os.path.exists(path):
         return 0, "file not found"
@@ -1417,7 +1417,7 @@ def load_customer_db(path):
         return 0, f"read error: {str(e)[:80]}"
 
 def match_customer(account="", name=""):
-    """Numer konta z dokumentu to klucz JEDNOZNACZNY - nazwa tylko awaryjnie."""
+    """The account number on the document is the UNAMBIGUOUS key; the name is a fallback only."""
     if account:
         rec = CUSTOMER_DB["by_no"].get(account.strip().upper())
         if rec: return rec, "account"
@@ -1431,8 +1431,8 @@ def match_customer(account="", name=""):
     return None, ""
 
 def enrich_from_customers(data):
-    """Uzupelnia BRAKI danymi z kartoteki. Adres z dokumentu jest nadrzedny zawsze -
-       dropshipment i klienci z wieloma adresami dostawy sa norma, nie wyjatkiem."""
+    """Fills GAPS from the customer file. The document address always takes precedence -
+       dropshipments and customers with several delivery addresses are the norm, not the exception."""
     rec, how = match_customer(data.get("account", ""), data.get("company", ""))
     out = dict(data)
     out["match"] = {"found": bool(rec), "how": how, "no": (rec or {}).get("no", ""),
@@ -1476,9 +1476,9 @@ def find_chrome():
     return ""
 
 def build_setup_page(has_chrome=True):
-    """Strona instalacyjna zakladki. Przeciagniecie linku na pasek zakladek to jedyny
+    """Bookmark installation page. Dragging the link onto the bookmarks bar is the only
        bezpieczny sposob: NIE ruszamy pliku profilu Chrome (suma kontrolna, synchronizacja,
-       wiele profili, wymog zamknietej przegladarki) i nie potrzebujemy uprawnien admina."""
+       multiple profiles, a browser that must be closed) and it needs no admin rights."""
     chrome_note = ("" if has_chrome else
         '<div class="warn"><b>Chrome not detected on this station.</b><br>'
         'The console and this bookmark work best in Chrome. Install it, then reopen this page.'
@@ -1554,8 +1554,8 @@ def sound_dir(cfg):
     return d if d and os.path.isdir(d) else os.path.join(app_base_dir(), "sounds")
 
 def find_sound(cfg, kind, exts):
-    """Plik dzwieku dla zdarzenia, jesli operator go dostarczyl. Nazwa = rodzaj zdarzenia
-       (ok / err / warn / line / done). Brak pliku = gramy wygenerowany ton."""
+    """Sound file for an event when the operator supplied one. The name is the event kind
+       (ok / err / warn / line / done). With no file, a generated tone is played instead."""
     base = sound_dir(cfg)
     for ext in exts:
         f = os.path.join(base, kind + ext)
@@ -1578,7 +1578,7 @@ BEEP_SEQS = {
 snd_state = {"id": 0, "kind": ""}
 
 def build_loc_index(max_events=60000):
-    """Buduje indeks SKU -> biny z historii zdarzen. Czyta plik od konca (swieze wazniejsze)."""
+    """Builds a SKU to bin index from event history. Reads the file backwards, since recent events matter more."""
     idx = {}
     try:
         pth = events_path()
@@ -1623,7 +1623,7 @@ def build_loc_index(max_events=60000):
     return LOC_INDEX
 
 def loc_suggest(sku):
-    """Zwraca liste kandydatow (max 3) dla SKU albo []."""
+    """Returns up to three candidate bins for a SKU, or an empty list."""
     return LOC_INDEX["map"].get(_norm_sku(sku or ""), [])
 
 # ---------- BUSINESS CENTRAL ADAPTER (Bin Contents over OData V4 + OAuth2) ----------
@@ -1670,8 +1670,8 @@ def _bc_token(cfg):
     return BC_TOKEN["tok"]
 
 def bc_bin_contents(skus, cfg, force=False):
-    """Dla listy SKU zwraca [{"sku","bin","qty"}] z Bin Contents w BC.
-       Wymaga opublikowanej strony 7379 'Bin Contents' jako web service (nazwa w cfg['bc_ws'])."""
+    """For a list of SKUs returns [{"sku","bin","qty"}] from ERP Bin Contents.
+       Requires page 7379 'Bin Contents' published as a web service (its name lives in cfg['bc_ws'])."""
     import urllib.request, urllib.parse, time as _t
     out, need = [], []
     now = _t.time()
@@ -1714,7 +1714,7 @@ def bc_bin_contents(skus, cfg, force=False):
     return out
 
 def load_bin_export(path):
-    """Trzecie zrodlo lokacji: plik CSV/TSV z eksportu Power Query (Excel uwierzytelnia sie
+    """Third location source: a CSV/TSV exported from Power Query (Excel authenticates
        JAKO UZYTKOWNIK - omija ograniczenia service principala).
        Kolumny wykrywane elastycznie: cokolwiek zawierajace item / bin / qty|quantity|base.
        Zwraca (rekordy, info)."""
@@ -1765,7 +1765,7 @@ def load_bin_export(path):
 
 def _agg_by_sku(rows):
     """BC zwraca osobne wiersze per lot / jednostka miary - sumujemy po (sku, bin),
-       zeby ten sam bin nie zajmowal dwoch z trzech miejsc na liscie sugestii."""
+       so one bin cannot take two of the three suggestion slots."""
     acc = {}
     for r in rows:
         key = (r["sku"], r["bin"])
@@ -1776,7 +1776,7 @@ def _agg_by_sku(rows):
     return by
 
 def merge_export_into_index(path):
-    """Scala eksport do LOC_INDEX z pierwszenstwem (src='bc') - tak samo jak API."""
+    """Merges the export into LOC_INDEX with priority (src='bc'), exactly like the API path."""
     rows, info = load_bin_export(path)
     if not rows: return 0, info
     by = _agg_by_sku(rows)
@@ -1803,7 +1803,7 @@ def merge_bc_into_index(skus, cfg):
 SPECIAL_BINS = {"CROSSDOCKING","WARRANTY","ASSEMBLY","DISPATCH"}
 def format_bin_input(raw):
     """Maska 'sztywnych myslnikow': '30a03a2' -> '30-A03-A2'. Zwraca (sformatowany, ok).
-       Akceptuje tez juz-sformatowane kody i biny specjalne."""
+       Already formatted codes and special bins are accepted as well."""
     s = (raw or "").strip().upper()
     if not s: return "", False
     if s in SPECIAL_BINS: return s, True
@@ -1818,7 +1818,7 @@ LAST_PUTAWAY = {"hdr": "", "rows": []}      # last parsed put-away (prefills the
 _TEST_HOOKS = {}                             # handles for the smoke-test harness (no runtime impact)
 
 def export_inbound_day_html(entries, out_path):
-    """Jeden plik dnia dla Office/Teams: Item / Description / Qty / PO (PO na koncu linii,
+    """One file per day for downstream tools: Item / Description / Qty / PO (PO at the end of the line,
        zgodnie z prosba: 'note a PO number at the end with each line ... 1 file is fine')."""
     rows_html = "".join(
         f'<tr><td style="border:1px solid #cfc3b0;padding:6px 10px;font-family:Consolas,monospace">{html.escape(e.get("sku",""))}</td>'
@@ -1850,9 +1850,9 @@ style="background:#0E7490;color:#fff;border:0;border-radius:6px;padding:8px 14px
     return out_path
 
 def find_pickmap_template():
-    """Szuka szablonu rack-view: dokladna nazwa, potem tolerancja literowek (*pick*template*.html)
+    """Looks for the rack-view template: exact name first, then a typo-tolerant glob (*pick*template*.html)
        obok exe / folder wyzej / Logi. Gdy brak - materializuje WBUDOWANY szablon do Logi
-       (rack view jest samowystarczalny jak widok 3D; zewnetrzny plik nadal ma priorytet)."""
+       (the rack view is self-contained like the 3D view; an external file still takes priority)."""
     import glob as _g
     base = app_base_dir()
     dirs = (base, os.path.dirname(base), os.path.join(base, "Logi"))
@@ -1871,8 +1871,8 @@ def find_pickmap_template():
         return None
 
 def build_pickmap_heat_html(template_path, heat, unmapped, out_path):
-    """Wstrzykuje realne dane do szablonu autora: PickMap.heatmap(dane) po zaladowaniu
-       + baner z data/liczba pickow + lista lokacji spoza mapy. Zwraca out_path."""
+    """Injects live data into the template: PickMap.heatmap(data) once it has loaded,
+       plus a banner with the date and pick count and a list of off-map locations. Returns out_path."""
     txt = Path(template_path).read_text(encoding="utf-8")
     payload = json.dumps(dict(heat), ensure_ascii=False)
     n_locs = len(heat); n_lines = sum(heat.values())
@@ -1899,7 +1899,7 @@ def build_pickmap_heat_html(template_path, heat, unmapped, out_path):
 # ---------------- PICKMAP ISO (faked 3D projection - a view for decision makers) ----------------
 def pickmap_iso_data():
     """Agregacja telemetrii per (grupa_stref, alejka, strona, bay) pod widok izometryczny.
-       Strefy 30/31 = ta sama fizyczna pozycja (podloga/pietra) -> sumowane jako '30'."""
+       Two zone codes can share one physical position (floor and upper levels) and are summed as one."""
     from collections import Counter
     heat, un = Counter(), Counter()
     for ev in load_telemetry():
@@ -2020,7 +2020,7 @@ g:hover polygon{{filter:brightness(1.28)}} svg{{display:block;margin:0 auto}}</s
     return out_path
 
 def load_telemetry():
-    """Zdarzenia PICK_TELEMETRY z pliku events (dane o procesie, bez operatorow)."""
+    """PICK_TELEMETRY events from the event file (process data only, no operator identity)."""
     return [e for e in load_events() if e.get("type") == "PICK_TELEMETRY" and e.get("lines")]
 
 def analyze_warehouse(tele):
@@ -2080,8 +2080,8 @@ def analyze_warehouse(tele):
             "movers": movers, "pairs": pairs_rank, "summary": summary}
 
 def parse_customer_file(path):
-    """Wczytuje klientow z Excela (.xlsx/.xls) lub CSV. Zwraca {KOD: nazwa}.
-       Kolumna A = kod, kolumna B = nazwa. Pomija wiersz naglowka."""
+    """Loads customers from Excel (.xlsx/.xls) or CSV. Returns {CODE: name}.
+       Column A is the code, column B the name. The header row is skipped."""
     out = {}
     HEADERS = ("no.","no","code","kod","number","nr","customer","klient")
     ext = os.path.splitext(path)[1].lower()
@@ -2420,8 +2420,8 @@ def find_edge():
     return None
 
 def html_to_pdf(html_path, pdf_path):
-    """Render HTML -> PDF przez Edge headless (format 1:1, bez admina).
-       WAZNE: Edge konczy proces ZANIM dokonczy zapis - czekamy az plik sie pojawi i ustabilizuje."""
+    """Renders HTML to PDF through headless Edge (1:1 layout, no admin rights).
+       IMPORTANT: Edge exits BEFORE the write completes, so we wait for the file to appear and settle."""
     edge = find_edge()
     if not edge: raise RuntimeError("Microsoft Edge not found - cannot render PDF")
     edge_profile = os.path.join(tempfile.gettempdir(), "pickcore_edge_profile")
@@ -2432,7 +2432,7 @@ def html_to_pdf(html_path, pdf_path):
     except Exception: pass
 
     def _wait_pdf(timeout=20):
-        """Czekaj az PDF sie pojawi I rozmiar przestanie rosnac (zapis zakonczony)."""
+        """Wait until the PDF exists AND its size stops growing, meaning the write has finished."""
         t0 = time.time(); last = -1
         while time.time() - t0 < timeout:
             if os.path.exists(pdf_path):
@@ -2461,10 +2461,10 @@ def html_to_pdf(html_path, pdf_path):
 LAST_PRINT = {"html": None, "hdr": ""}   # last sheet available for reprint (HTML path in the archive)
 
 def print_pdf(pdf_path, printer_name=None):
-    """Druk PDF bez dodatkowych plikow.
+    """Prints a PDF with no helper files.
        1) 'printto' - drukuje na DOKLADNIE wskazana drukarke (Adobe bierze ja z argumentu,
           NIE z wlasnej pamieci - rozwiazuje 'przyklejona' Zebre). Dziala gdy handler PDF go wspiera.
-       2) fallback gdy printto niewspierany (np. inny handler): tymczasowy default + verb 'print'."""
+       2) fallback when printto is unsupported (a different handler): temporary default plus the 'print' verb."""
     if printer_name:
         try:
             import win32api
@@ -2517,7 +2517,7 @@ DEFAULT_CFG = {"watch_dir":"","archive_dir_pick":"","archive_dir_pa":"","printer
                "analytics_owners":["OPERATOR"],
                }
 def _ver_tuple(v):
-    """'1.10' > '1.9' - porownanie numeryczne, nie leksykalne."""
+    """'1.10' > '1.9' - compared numerically, not lexically."""
     out = []
     for part in str(v or "").strip().split("."):
         d = "".join(ch for ch in part if ch.isdigit())
@@ -2541,7 +2541,7 @@ def check_update(update_dir):
         return False, "", f"read error: {str(e)[:70]}"
 
 def profile_path():
-    """Profil wdrozeniowy lezacy OBOK exe - wzorzec ustawien dla nowej stacji."""
+    """Deployment profile sitting NEXT TO the exe - the settings template for a new station."""
     return os.path.join(app_base_dir(), "pickcore_profile.json")
 
 # Station-specific keys: NOT carried between machines.
@@ -2607,7 +2607,7 @@ def wait_stable(path, timeout=15):
     return os.path.exists(path)
 
 def pick_base_name(header_no, rows):
-    """Nazwa pliku w archiwum = primary order (SO), bo po nim szukamy zlecenia w BC."""
+    """Archive file name is the primary sales order, since that is the key used to find the job in the ERP."""
     return primary_order(rows, header_no)
 
 def unique_pick_path(folder, base, ext=".html"):
@@ -2769,7 +2769,7 @@ def run_gui():
            Rail startuje waski (same ikony, etykieta w dymku), przypinany klikiem
            w logo. API zgodne z uzywanym podzbiorem ttk.Notebook (add/insert/select/
            tab/alert + wirtualne <<NotebookTabChanged>>), wiec zawartosc zakladek
-           nie wymaga zadnych zmian."""
+           requires no changes at all."""
         GROUPS = ("OUTBOUND", "INBOUND", "OPERATIONS", "LABELS", "INSIGHTS", "SYSTEM")
         W_MIN, W_MAX, ROW_H = 60, 210, 38
         def __init__(self, master):
@@ -3008,7 +3008,7 @@ def run_gui():
             Path(_pa_path()).write_text(json.dumps({k: pa[k] for k in ("po","doc","lines","await","active")},
                 ensure_ascii=False), encoding="utf-8")
         except Exception as e:
-            # Cichy blad = po restarcie sesja wraca PUSTA, a operator sadzi, ze zapisana.
+            # A silent failure means the session comes back EMPTY after a restart while the operator believes it was saved.
             note_io_fail("pa_save", e)
     def pa_clear_file(archive=False):
         try:
@@ -3036,15 +3036,15 @@ def run_gui():
         except Exception: pass
 
     def _beep(kind):
-        """Rozroznialne sygnatury dzwiekowe (winsound.Beep, w osobnym watku - nie zamraza GUI).
+        """Distinguishable sound signatures (winsound.Beep on its own thread, so the GUI never freezes).
            ok=krotki tik | err=niski szorstki | warn=podwojny sredni | line=wznoszacy (item 10/10)
            | done=fanfara C-E-G-C (caly pick 74/74).
            v1.0: ta sama sygnatura gra na TC22 - konsola dostaje (id, kind) w snapshocie
            i odtwarza SEKWENCJE Z BEEP_SEQS (jedno zrodlo prawdy, zero duplikacji nut w JS)."""
         seqs = BEEP_SEQS
         snd_state["id"] += 1; snd_state["kind"] = kind if kind in seqs else "ok"
-        # Wlasny plik operatora ma pierwszenstwo nad tonem generowanym.
-        # winsound obsluguje tylko WAV - MP3 dziala wylacznie na konsoli TC22.
+        # An operator-supplied file takes precedence over the generated tone.
+        # winsound handles WAV only - MP3 works exclusively on the handheld console.
         _wav = find_sound(cfg, snd_state["kind"], SOUND_EXT_PC)
         if _wav:
             try:
@@ -3104,7 +3104,7 @@ def run_gui():
                           fg=UI["text"], insertbackground=UI["ok"], relief="flat")
     scan_entry.pack(side="left", fill="x", expand=True, padx=8, ipady=6)
     # pomiar predkosci: SPRZETOWY timestamp zdarzenia (event.time, ms) - odporny na lag petli Tk
-    # (poprzednio: czas obslugi handlera, ktory puchl gdy watek glowny byl zajety -> falszywe odrzuty skanow)
+    # (previously: handler execution time, which inflated whenever the main thread was busy and caused false scan rejects)
     scan_keys = {"times": []}
     _dbg = {"n": 0, "mx": 0, "md": 0}
     _CTRL = ("Return","Tab","Shift_L","Shift_R","Control_L","Control_R","Alt_L","Alt_R","Caps_Lock",
@@ -3128,7 +3128,7 @@ def run_gui():
     btn_copy = tk.Button(scan_fr, text="📋 Copy serials", bg=UI["ok"], fg="white", relief="flat", font=("Bahnschrift",10,"bold"), width=14, cursor="hand2")
     btn_undo = tk.Button(scan_fr, text="↶ Undo", bg=UI["serial"], fg="white", relief="flat", font=("Bahnschrift",10,"bold"), width=8, cursor="hand2")
     btn_finish = tk.Button(scan_fr, text="✓ Finish pick", bg="#FF7B00", fg="white", relief="flat", font=("Bahnschrift",10,"bold"), width=13, cursor="hand2")
-    # przycisk przejscia do seriali (widoczny w walidacji gdy pick ma itemy z serialami)
+    # button into serial capture, shown during validation when the pick has serialised items
     btn_to_serials = tk.Button(scan_fr, text="🔢 Serials →", bg=UI["serial"], fg="white", relief="flat", font=("Bahnschrift",10,"bold"), width=11, cursor="hand2")
 
     # --- BANER FEEDBACKU: duzy, zmienia tlo wg stanu (sygnal z 2m) ---
@@ -3137,7 +3137,7 @@ def run_gui():
     fb.pack(fill="x", padx=16, pady=(4,2))
     bulk_hint = tk.Label(t1, text="", fg=UI["serial"], bg=UI["bg"], font=("Cascadia Mono",10), anchor="w")
     bulk_hint.pack(fill="x", padx=18)
-    # selektor trybu paka dla AKTYWNEGO radia (widoczny tylko w trybie seriali)
+    # pack mode selector for the ACTIVE unit, visible only in serial mode
     pack_fr = tk.Frame(t1, bg=UI["bg"])
     tk.Label(pack_fr, text="Pack mode:", fg=UI["muted"], bg=UI["bg"], font=("Bahnschrift",9,"bold")).pack(side="left", padx=(0,8))
     PACK_MODES = {"Single":1, "Dual":2, "Quad":4, "6-pack":6}
@@ -3178,9 +3178,9 @@ def run_gui():
             except Exception as e:
                 log_q.put(f"! Reprint failed: {e}")
         threading.Thread(target=job, daemon=True).start()
-    # 3.0: pickujemy ze skanera, wiec ponowny druk arkusza A4 to juz wyjatek, nie rutyna.
-    # Przycisk schodzi do rozmiaru ikony - zostaje pod reka, ale przestaje konkurowac
-    # o uwage z akcjami, ktorych uzywa sie realnie. Sama funkcja bez zmian.
+    # Picking is scanner-driven now, so reprinting the A4 sheet is an exception, not routine.
+    # The button shrinks to icon size: still within reach, but no longer competing
+    # for attention with the actions that actually get used. The function itself is unchanged.
     _btn_reprint = tk.Button(_btm, text="🖨", command=print_again, bg=UI["panel2"], fg=UI["faint"],
                              relief="flat", font=("Bahnschrift",9), cursor="hand2", width=3)
     _btn_reprint.pack(side="left", padx=4)
