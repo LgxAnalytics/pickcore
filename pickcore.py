@@ -38,7 +38,7 @@ except Exception:
     win32print = None                      # environments without pywin32 (dev/test) - RAW printing unavailable
 
 def resource_path(rel):
-    """Sciezka do zasobu (dziala tez w spakowanym .exe przez PyInstaller _MEIPASS)."""
+    """Path to a bundled resource, working inside a packed .exe through PyInstaller _MEIPASS."""
     base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
     return os.path.join(base, rel)
 
@@ -492,7 +492,7 @@ def save_serial_skus(s):
 
 # ---------- KNOWN SKU REGISTRY (learns passively from every pick/put-away) ----------
 def load_known_skus():
-    """Katalog SKU zebranych ze wszystkich przetworzonych dokumentow. Fundament triage:
+    """Catalogue of SKUs gathered from every processed document. The basis of triage:
        a code NOT on the pick but IN the registry is a genuine wrong item; outside it, noise."""
     if KNOWN_SKUS_PATH.exists():
         try: return set(json.loads(KNOWN_SKUS_PATH.read_text(encoding="utf-8")))
@@ -1458,7 +1458,7 @@ def enrich_from_customers(data):
 FORWARDER_BOOKMARKLET = r"""javascript%3A%28async%20function%28%29%20%7B%20%20%20let%20raw%3B%20%20%20try%20%7B%20%20%20%20%20raw%20%3D%20await%20navigator.clipboard.readText%28%29%3B%20%20%20%7D%20catch%20%28e%29%20%7B%20%20%20%20%20alert%28%22Cannot%20read%20the%20clipboard.%5CnClick%20once%20on%20the%20page%20background%20and%20try%20again.%22%29%3B%20%20%20%20%20return%3B%20%20%20%7D%20%20%20let%20d%3B%20%20%20try%20%7B%20%20%20%20%20d%20%3D%20JSON.parse%28raw%29%3B%20%20%20%7D%20catch%20%28e%29%20%7B%20%20%20%20%20alert%28%20%20%20%20%20%20%20%22The%20clipboard%20holds%20no%20shipment%20payload%20%28JSON%29.%5CnCopy%20the%20payload%20from%20the%20Forwarder%20view%20first.%22%20%20%20%20%20%20%20%29%3B%20%20%20%20%20return%3B%20%20%20%7D%20%20%20const%20MAP_MAIN%20%3D%20%5B%20%20%20%20%20%5B%22your_reference%22%2C%20%5B%22your%20reference%22%5D%5D%2C%20%20%20%20%20%5B%22delivery_reference%22%2C%20%5B%22delivery%20reference%22%5D%5D%2C%20%20%20%20%20%5B%22company_name%22%2C%20%5B%22company%20name%22%5D%5D%2C%20%20%20%20%20%5B%22contact_name%22%2C%20%5B%22contact%20name%22%5D%5D%2C%20%20%20%20%20%5B%22address1%22%2C%20%5B%22address%20line%201%22%2C%20%22street%20name%22%5D%5D%2C%20%20%20%20%20%5B%22address2%22%2C%20%5B%22address%20line%202%22%5D%5D%2C%20%20%20%20%20%5B%22address3%22%2C%20%5B%22address%20line%203%22%5D%5D%2C%20%20%20%20%20%5B%22postcode%22%2C%20%5B%22postal%20code%22%2C%20%22postcode%22%2C%20%229999%20aa%22%5D%5D%2C%20%20%20%20%20%5B%22city%22%2C%20%5B%22town%22%2C%20%22city%22%5D%5D%2C%20%20%20%20%20%5B%22telephone%22%2C%20%5B%22telephone%22%2C%20%22phone%22%5D%5D%2C%20%20%20%20%20%5B%22email%22%2C%20%5B%22email%22%5D%5D%20%20%20%5D%3B%20%20%20const%20MAP_PARCEL%20%3D%20%5B%20%20%20%20%20%5B%22description%22%2C%20%5B%22parcel%20description%22%5D%5D%2C%20%20%20%20%20%5B%22weight_kg%22%2C%20%5B%22parcel%20weight%22%5D%5D%2C%20%20%20%20%20%5B%22length_cm%22%2C%20%5B%22parcel%20length%22%5D%5D%2C%20%20%20%20%20%5B%22width_cm%22%2C%20%5B%22parcel%20width%22%5D%5D%2C%20%20%20%20%20%5B%22height_cm%22%2C%20%5B%22parcel%20height%22%5D%5D%2C%20%20%20%20%20%5B%22value%22%2C%20%5B%22value%22%5D%5D%20%20%20%5D%3B%20%20%20const%20norm%20%3D%20%28s%29%20%3D%3E%20%28s%20%7C%7C%20%22%22%29.toLowerCase%28%29.replace%28%2F%5Cs%2B%2Fg%2C%20%22%20%22%29.trim%28%29%3B%20%20%20%20function%20scan%28%29%20%7B%20%20%20%20%20return%20%5B...document.querySelectorAll%28%22input%2C%20select%2C%20textarea%22%29%5D.filter%28%28e%29%20%3D%3E%20e.type%20%21%3D%3D%20%20%20%20%20%20%20%22hidden%22%20%26%26%20%21e.disabled%20%26%26%20e.offsetParent%20%21%3D%3D%20null%29.map%28%28e%29%20%3D%3E%20%7B%20%20%20%20%20%20%20let%20lab%20%3D%20%22%22%3B%20%20%20%20%20%20%20if%20%28e.labels%20%26%26%20e.labels%5B0%5D%29%20lab%20%3D%20e.labels%5B0%5D.innerText%3B%20%20%20%20%20%20%20if%20%28%21lab%29%20%7B%20%20%20%20%20%20%20%20%20const%20cell%20%3D%20e.closest%28%22td%2C%20div%2C%20tr%22%29%3B%20%20%20%20%20%20%20%20%20if%20%28cell%29%20%7B%20%20%20%20%20%20%20%20%20%20%20const%20prev%20%3D%20cell.previousElementSibling%3B%20%20%20%20%20%20%20%20%20%20%20if%20%28prev%29%20lab%20%3D%20prev.innerText%3B%20%20%20%20%20%20%20%20%20%7D%20%20%20%20%20%20%20%7D%20%20%20%20%20%20%20return%20%7B%20%20%20%20%20%20%20%20%20el%3A%20e%2C%20%20%20%20%20%20%20%20%20txt%3A%20norm%28%5Blab%2C%20e.name%2C%20e.id%2C%20e.placeholder%5D.join%28%22%20%22%29%29%20%20%20%20%20%20%20%7D%3B%20%20%20%20%20%7D%29%3B%20%20%20%7D%20%20%20const%20findIn%20%3D%20%28list%2C%20frags%29%20%3D%3E%20%7B%20%20%20%20%20for%20%28const%20f%20of%20frags%29%20%7B%20%20%20%20%20%20%20const%20hit%20%3D%20list.find%28%28x%29%20%3D%3E%20x.txt.includes%28f%29%20%26%26%20%21x.el.dataset.fwFilled%29%3B%20%20%20%20%20%20%20if%20%28hit%29%20return%20hit%3B%20%20%20%20%20%7D%20%20%20%20%20return%20null%3B%20%20%20%7D%3B%20%20%20const%20sleep%20%3D%20%28ms%29%20%3D%3E%20new%20Promise%28%28r%29%20%3D%3E%20setTimeout%28r%2C%20ms%29%29%3B%20%20%20const%20setValue%20%3D%20%28el%2C%20val%29%20%3D%3E%20%7B%20%20%20%20%20const%20v%20%3D%20String%28val%20%3D%3D%20null%20%3F%20%22%22%20%3A%20val%29%3B%20%20%20%20%20if%20%28el.tagName%20%3D%3D%3D%20%22SELECT%22%29%20%7B%20%20%20%20%20%20%20if%20%28%21el.options%20%7C%7C%20%21el.options.length%29%20return%20false%3B%20%20%20%20%20%20%20const%20opt%20%3D%20%5B...el.options%5D.find%28%28o%29%20%3D%3E%20norm%28o.text%29%20%3D%3D%3D%20norm%28v%29%20%7C%7C%20norm%28o.value%29%20%3D%3D%3D%20%20%20%20%20%20%20%20%20norm%28v%29%29%20%7C%7C%20%5B...el.options%5D.find%28%28o%29%20%3D%3E%20norm%28o.text%29.startsWith%28norm%28v%29%29%29%3B%20%20%20%20%20%20%20if%20%28%21opt%29%20return%20false%3B%20%20%20%20%20%20%20el.value%20%3D%20opt.value%3B%20%20%20%20%20%7D%20else%20%7B%20%20%20%20%20%20%20el.focus%28%29%3B%20%20%20%20%20%20%20el.value%20%3D%20v%3B%20%20%20%20%20%7D%20%20%20%20%20el.dispatchEvent%28new%20Event%28%22input%22%2C%20%7B%20%20%20%20%20%20%20bubbles%3A%20true%20%20%20%20%20%7D%29%29%3B%20%20%20%20%20el.dispatchEvent%28new%20Event%28%22change%22%2C%20%7B%20%20%20%20%20%20%20bubbles%3A%20true%20%20%20%20%20%7D%29%29%3B%20%20%20%20%20el.dispatchEvent%28new%20Event%28%22blur%22%2C%20%7B%20%20%20%20%20%20%20bubbles%3A%20true%20%20%20%20%20%7D%29%29%3B%20%20%20%20%20el.style.outline%20%3D%20%222px%20solid%20%2327c66d%22%3B%20%20%20%20%20el.dataset.fwFilled%20%3D%20%221%22%3B%20%20%20%20%20return%20true%3B%20%20%20%7D%3B%20%20%20%20function%20tickCheckbox%28labelFrag%29%20%7B%20%20%20%20%20const%20box%20%3D%20%5B...document.querySelectorAll%28%27input%5Btype%3D%22checkbox%22%5D%27%29%5D.find%28%28e%29%20%3D%3E%20%7B%20%20%20%20%20%20%20let%20lab%20%3D%20e.labels%20%26%26%20e.labels%5B0%5D%20%3F%20e.labels%5B0%5D.innerText%20%3A%20%22%22%3B%20%20%20%20%20%20%20if%20%28%21lab%29%20%7B%20%20%20%20%20%20%20%20%20const%20par%20%3D%20e.closest%28%22td%2C%20div%2C%20label%2C%20tr%22%29%3B%20%20%20%20%20%20%20%20%20lab%20%3D%20par%20%3F%20par.innerText%20%3A%20%22%22%3B%20%20%20%20%20%20%20%7D%20%20%20%20%20%20%20return%20norm%28%5Blab%2C%20e.name%2C%20e.id%5D.join%28%22%20%22%29%29.includes%28labelFrag%29%3B%20%20%20%20%20%7D%29%3B%20%20%20%20%20if%20%28%21box%29%20return%20false%3B%20%20%20%20%20if%20%28%21box.checked%29%20box.click%28%29%3B%20%20%20%20%20box.style.outline%20%3D%20%222px%20solid%20%2327c66d%22%3B%20%20%20%20%20return%20box.checked%3B%20%20%20%7D%20%20%20%20function%20setCountry%28want%29%20%7B%20%20%20%20%20const%20w%20%3D%20norm%28want%29%3B%20%20%20%20%20if%20%28%21w%29%20return%20false%3B%20%20%20%20%20const%20sels%20%3D%20%5B...document.querySelectorAll%28%22select%22%29%5D%3B%20%20%20%20%20for%20%28const%20sel%20of%20sels%29%20%7B%20%20%20%20%20%20%20if%20%28%21sel.options%20%7C%7C%20%21sel.options.length%29%20continue%3B%20%20%20%20%20%20%20const%20opt%20%3D%20%5B...sel.options%5D.find%28%28o%29%20%3D%3E%20norm%28o.text%29%20%3D%3D%3D%20w%20%7C%7C%20norm%28o.value%29%20%3D%3D%3D%20w%29%3B%20%20%20%20%20%20%20if%20%28%21opt%29%20continue%3B%20%20%20%20%20%20%20if%20%28norm%28sel.value%29%20%3D%3D%3D%20norm%28opt.value%29%29%20%7B%20%20%20%20%20%20%20%20%20sel.style.outline%20%3D%20%222px%20solid%20%2327c66d%22%3B%20%20%20%20%20%20%20%20%20return%20true%3B%20%20%20%20%20%20%20%7D%20%20%20%20%20%20%20sel.value%20%3D%20opt.value%3B%20%20%20%20%20%20%20sel.dispatchEvent%28new%20Event%28%22input%22%2C%20%7B%20%20%20%20%20%20%20%20%20bubbles%3A%20true%20%20%20%20%20%20%20%7D%29%29%3B%20%20%20%20%20%20%20sel.dispatchEvent%28new%20Event%28%22change%22%2C%20%7B%20%20%20%20%20%20%20%20%20bubbles%3A%20true%20%20%20%20%20%20%20%7D%29%29%3B%20%20%20%20%20%20%20try%20%7B%20%20%20%20%20%20%20%20%20if%20%28window.jQuery%29%20window.jQuery%28sel%29.trigger%28%22change%22%29%3B%20%20%20%20%20%20%20%7D%20catch%20%28e%29%20%7B%7D%20%20%20%20%20%20%20sel.style.outline%20%3D%20%222px%20solid%20%2327c66d%22%3B%20%20%20%20%20%20%20return%20true%3B%20%20%20%20%20%7D%20%20%20%20%20return%20false%3B%20%20%20%7D%20%20%20%20function%20setPackaging%28want%29%20%7B%20%20%20%20%20const%20w%20%3D%20norm%28want%29%3B%20%20%20%20%20const%20isPack%20%3D%20%28t%29%20%3D%3E%20t.includes%28%22packaging%20type%22%29%20%7C%7C%20t.includes%28%22packing%20type%22%29%3B%20%20%20%20%20const%20sels%20%3D%20%5B...document.querySelectorAll%28%22select%22%29%5D.filter%28%28e%29%20%3D%3E%20isPack%28norm%28%5B%28e%20%20%20%20%20%20%20%20%20.labels%20%26%26%20e.labels%5B0%5D%20%3F%20e.labels%5B0%5D.innerText%20%3A%20%22%22%29%2C%20e.name%2C%20e.id%5D.join%28%22%20%22%29%29%29%20%7C%7C%20%20%20%20%20%20%20isPack%28norm%28%28e.closest%28%22td%2C%20div%2C%20tr%22%29%20%7C%7C%20%7B%7D%29.innerText%20%7C%7C%20%22%22%29%29%29%3B%20%20%20%20%20for%20%28const%20sel%20of%20sels%29%20%7B%20%20%20%20%20%20%20if%20%28%21sel.options%20%7C%7C%20%21sel.options.length%29%20continue%3B%20%20%20%20%20%20%20const%20opt%20%3D%20%5B...sel.options%5D.find%28%28o%29%20%3D%3E%20norm%28o.text%29%20%3D%3D%3D%20w%20%7C%7C%20norm%28o.value%29%20%3D%3D%3D%20w%29%3B%20%20%20%20%20%20%20if%20%28opt%29%20%7B%20%20%20%20%20%20%20%20%20sel.value%20%3D%20opt.value%3B%20%20%20%20%20%20%20%20%20sel.dispatchEvent%28new%20Event%28%22input%22%2C%20%7B%20%20%20%20%20%20%20%20%20%20%20bubbles%3A%20true%20%20%20%20%20%20%20%20%20%7D%29%29%3B%20%20%20%20%20%20%20%20%20sel.dispatchEvent%28new%20Event%28%22change%22%2C%20%7B%20%20%20%20%20%20%20%20%20%20%20bubbles%3A%20true%20%20%20%20%20%20%20%20%20%7D%29%29%3B%20%20%20%20%20%20%20%20%20try%20%7B%20%20%20%20%20%20%20%20%20%20%20if%20%28window.jQuery%29%20window.jQuery%28sel%29.trigger%28%22change%22%29%3B%20%20%20%20%20%20%20%20%20%7D%20catch%20%28e%29%20%7B%7D%20%20%20%20%20%20%20%20%20sel.style.outline%20%3D%20%222px%20solid%20%2327c66d%22%3B%20%20%20%20%20%20%20%20%20return%20true%3B%20%20%20%20%20%20%20%7D%20%20%20%20%20%7D%20%20%20%20%20const%20trigger%20%3D%20%5B...document.querySelectorAll%28%22button%2C%20a%2C%20div%2C%20span%22%29%5D.find%28%28e%29%20%3D%3E%20norm%28e%20%20%20%20%20%20%20%20%20.textContent%29%20%3D%3D%3D%20%22select%20packaging%20type%22%20%7C%7C%20norm%28e.textContent%29%20%3D%3D%3D%20%20%20%20%20%20%20%22select%20packing%20type%22%29%3B%20%20%20%20%20if%20%28trigger%29%20%7B%20%20%20%20%20%20%20trigger.click%28%29%3B%20%20%20%20%20%20%20const%20item%20%3D%20%5B...document.querySelectorAll%28%22li%2C%20option%2C%20div%2C%20span%2C%20a%22%29%5D.find%28%28e%29%20%3D%3E%20norm%28e%20%20%20%20%20%20%20%20%20.textContent%29%20%3D%3D%3D%20w%20%26%26%20e.offsetParent%20%21%3D%3D%20null%29%3B%20%20%20%20%20%20%20if%20%28item%29%20%7B%20%20%20%20%20%20%20%20%20item.click%28%29%3B%20%20%20%20%20%20%20%20%20return%20true%3B%20%20%20%20%20%20%20%7D%20%20%20%20%20%7D%20%20%20%20%20return%20false%3B%20%20%20%7D%20%20%20const%20filled%20%3D%20%5B%5D%2C%20%20%20%20%20missed%20%3D%20%5B%5D%3B%20%20%20const%20applied%20%3D%20%5B%5D%3B%20%20%20%20function%20fillGroup%28map%2C%20list%29%20%7B%20%20%20%20%20for%20%28const%20%5Bkey%2C%20frags%5D%20of%20map%29%20%7B%20%20%20%20%20%20%20const%20val%20%3D%20d%5Bkey%5D%3B%20%20%20%20%20%20%20if%20%28val%20%3D%3D%3D%20undefined%20%7C%7C%20val%20%3D%3D%3D%20%22%22%20%7C%7C%20val%20%3D%3D%3D%20null%29%20continue%3B%20%20%20%20%20%20%20const%20f%20%3D%20findIn%28list%2C%20frags%29%3B%20%20%20%20%20%20%20if%20%28f%20%26%26%20setValue%28f.el%2C%20val%29%29%20%7B%20%20%20%20%20%20%20%20%20filled.push%28key%29%3B%20%20%20%20%20%20%20%20%20applied.push%28%7B%20%20%20%20%20%20%20%20%20%20%20el%3A%20f.el%2C%20%20%20%20%20%20%20%20%20%20%20key%3A%20key%2C%20%20%20%20%20%20%20%20%20%20%20val%3A%20String%28val%29%20%20%20%20%20%20%20%20%20%7D%29%3B%20%20%20%20%20%20%20%7D%20else%20%7B%20%20%20%20%20%20%20%20%20missed.push%28key%29%3B%20%20%20%20%20%20%20%7D%20%20%20%20%20%7D%20%20%20%7D%20%20%20if%20%28d.country%29%20%7B%20%20%20%20%20if%20%28setCountry%28d.country%29%29%20%7B%20%20%20%20%20%20%20filled.push%28%22country%22%29%3B%20%20%20%20%20%20%20await%20sleep%28800%29%3B%20%20%20%20%20%7D%20else%20missed.push%28%22country%22%29%3B%20%20%20%7D%20%20%20fillGroup%28MAP_MAIN%2C%20scan%28%29%29%3B%20%20%20if%20%28d.parcels%20%21%3D%3D%20undefined%20%26%26%20d.parcels%20%21%3D%3D%20%22%22%20%26%26%20String%28d.parcels%29%20%21%3D%3D%20%221%22%29%20%7B%20%20%20%20%20const%20pf%20%3D%20findIn%28scan%28%29%2C%20%5B%22number%20of%20parcels%22%5D%29%3B%20%20%20%20%20if%20%28pf%29%20%7B%20%20%20%20%20%20%20setValue%28pf.el%2C%20d.parcels%29%3B%20%20%20%20%20%20%20filled.push%28%22parcels%22%29%3B%20%20%20%20%20%20%20await%20sleep%28700%29%3B%20%20%20%20%20%7D%20else%20%7B%20%20%20%20%20%20%20missed.push%28%22parcels%22%29%3B%20%20%20%20%20%7D%20%20%20%7D%20%20%20fillGroup%28MAP_PARCEL%2C%20scan%28%29%29%3B%20%20%20if%20%28tickCheckbox%28%22ready%20now%22%29%29%20filled.push%28%22ready_now%22%29%3B%20%20%20else%20missed.push%28%22ready_now%22%29%3B%20%20%20if%20%28setPackaging%28d.packing_type%20%7C%7C%20%22Box%22%29%29%20filled.push%28%22packing_type%22%29%3B%20%20%20else%20missed.push%28%22packing_type%22%29%3B%20%20%20await%20sleep%28600%29%3B%20%20%20let%20repaired%20%3D%200%3B%20%20%20for%20%28const%20a%20of%20applied%29%20%7B%20%20%20%20%20try%20%7B%20%20%20%20%20%20%20if%20%28a.el.isConnected%20%26%26%20String%28a.el.value%20%7C%7C%20%22%22%29%20%21%3D%3D%20a.val%20%26%26%20a.el.tagName%20%21%3D%3D%20%22SELECT%22%29%20%7B%20%20%20%20%20%20%20%20%20a.el.dataset.fwFilled%20%3D%20%22%22%3B%20%20%20%20%20%20%20%20%20if%20%28setValue%28a.el%2C%20a.val%29%29%20repaired%2B%2B%3B%20%20%20%20%20%20%20%7D%20%20%20%20%20%7D%20catch%20%28e%29%20%7B%7D%20%20%20%7D%20%20%20const%20box%20%3D%20document.createElement%28%22div%22%29%3B%20%20%20box.style.cssText%20%3D%20%20%20%20%20%22position%3Afixed%3Bright%3A16px%3Bbottom%3A16px%3Bz-index%3A999999%3Bbackground%3A%23161922%3Bcolor%3A%23e9edf2%3B%22%20%2B%20%20%20%20%20%22font%3A12px%2F1.5%20Segoe%20UI%2CArial%3Bpadding%3A12px%2014px%3Bborder%3A1px%20solid%20%232a2f3a%3Bborder-radius%3A8px%3B%22%20%2B%20%20%20%20%20%22max-width%3A340px%3Bbox-shadow%3A0%206px%2024px%20rgba%280%2C0%2C0%2C.4%29%22%3B%20%20%20box.innerHTML%20%3D%20%27%3Cb%20style%3D%22color%3A%234d8dff%22%3EFill%20shipment%3C%2Fb%3E%3Cbr%3E%27%20%2B%20%20%20%20%20%27%3Cspan%20style%3D%22color%3A%2327c66d%22%3Efilled%3A%20%27%20%2B%20filled.length%20%2B%20%22%3C%2Fspan%3E%22%20%2B%20%28missed.length%20%3F%20%20%20%20%20%20%20%27%3Cbr%3E%3Cspan%20style%3D%22color%3A%23f5b342%22%3Enot%20found%3A%20%27%20%2B%20missed.join%28%22%2C%20%22%29%20%2B%20%22%3C%2Fspan%3E%22%20%3A%20%20%20%20%20%20%20%27%3Cbr%3E%3Cspan%20style%3D%22color%3A%238a93a0%22%3Eall%20mapped%20fields%20filled%3C%2Fspan%3E%27%29%20%2B%20%28repaired%20%3F%20%20%20%20%20%20%20%27%3Cbr%3E%3Cspan%20style%3D%22color%3A%238a93a0%22%3Ere-applied%20after%20form%20refresh%3A%20%27%20%2B%20repaired%20%2B%20%22%3C%2Fspan%3E%22%20%3A%20%20%20%20%20%20%20%22%22%29%20%2B%20%27%3Cbr%3E%3Cspan%20style%3D%22color%3A%235a6675%22%3ECheck%20the%20form%20and%20submit%20manually.%3C%2Fspan%3E%27%3B%20%20%20document.body.appendChild%28box%29%3B%20%20%20setTimeout%28%28%29%20%3D%3E%20box.remove%28%29%2C%209000%29%3B%20%7D%29%28%29%3B"""
 
 def find_chrome():
-    """Sciezka do chrome.exe: rejestr App Paths, potem typowe lokalizacje instalacji."""
+    """Path to chrome.exe: the App Paths registry key first, then the usual install locations."""
     try:
         import winreg
         for hive in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
@@ -1767,7 +1767,7 @@ def load_bin_export(path):
     return rows, info
 
 def _agg_by_sku(rows):
-    """BC zwraca osobne wiersze per lot / jednostka miary - sumujemy po (sku, bin),
+    """The ERP returns separate rows per lot and unit of measure, so they are summed by (sku, bin),
        so one bin cannot take two of the three suggestion slots."""
     acc = {}
     for r in rows:
@@ -3450,7 +3450,7 @@ def run_gui():
             _focus_first_empty()
         return "break"
     pa_po_e.bind("<Return>", _commit_po); pa_po_e.bind("<FocusOut>", lambda e: (_commit_po(), None) and None)
-    # przewijalna siatka wierszy
+    # scrollable row grid
     _wrap = tk.Frame(t_in, bg=UI["panel"]); _wrap.pack(fill="both", expand=True, padx=16, pady=8)
     _cv = tk.Canvas(_wrap, bg=UI["panel"], highlightthickness=0)
     _sb = ttk.Scrollbar(_wrap, orient="vertical", command=_cv.yview)
@@ -3577,7 +3577,7 @@ def run_gui():
         except Exception:
             bc_state["refreshing"] = False
     def _bc_enrich(skus):
-        """Watek roboczy: pyta BC o SKU z dokumentu, wynik wraca do glownego watku kolejka."""
+        """Worker thread: queries the ERP for the document SKUs; the result returns to the main thread on a queue."""
         try:
             n = merge_bc_into_index(skus, cfg)
             bc_q.put(("ok", n))
@@ -3683,7 +3683,7 @@ def run_gui():
               font=("Bahnschrift",9)).pack(side="left", padx=4)
     _a_qty.bind("<Return>", add_line)
     def _pa_load(hdr, rows, announce=True):
-        # --- LOKACJE: historia lokalna -> eksport z BC -> (opcjonalnie) API; wszystko przed renderem ---
+        # --- LOCATIONS: local history, then the ERP export, then optionally the API; all before render ---
         try:
             build_loc_index()
             _maybe_refresh_export()
@@ -5167,8 +5167,8 @@ def run_gui():
         # A document the parser does not recognise used to yield an EMPTY form and red
         # "customer not found in database" - komunikat o ZLYM problemie. Operator
         # the operator then hunts for a fault in the customer file, when the real cause is
-        # list przewozowy kuriera (kolumny Shipper's / Consignee's Name) zamiast
-        # Sales Shipment z BC (blok Delivery Address). Mowimy to wprost.
+        # a courier waybill (Shipper's / Consignee's Name columns) was loaded instead of
+        # a sales shipment (Delivery Address block). The message says so explicitly.
         if not (str(d.get("company") or "").strip() or str(d.get("shipment_no") or "").strip()):
             _nazwa = os.path.basename(f)
             sb_match.config(text="\u26A0 to nie wyglada na Sales Shipment z BC", fg=UI["warn"])
@@ -5222,7 +5222,7 @@ def run_gui():
     def _sb_setup():
         """Strona instalacyjna zakladki. Serwujemy ja z wlasnego serwera - dzieki temu
            przeciagniecie linku na pasek dziala tak samo na kazdej stacji, bez dotykania
-           profilu Chrome (suma kontrolna pliku zakladek, synchronizacja, wiele profili)."""
+           the Chrome profile (bookmark file checksum, sync, multiple profiles)."""
         url = f"http://127.0.0.1:{int(cfg.get('http_port') or 8080)}/setup"
         chrome = find_chrome()
         if not cfg.get("http_serve"):
@@ -5329,8 +5329,8 @@ def run_gui():
             if d: var.set(d)
         tk.Button(parent,text="Browse",command=browse,bg="#5a4a38",fg="white",relief="flat").grid(row=row,column=2)
         return var
-    # Settings rosly z kazda funkcja i przestaly miescic sie w niezmaksymalizowanym oknie.
-    # Canvas + scrollbar + kolko myszy: dostep do WSZYSTKICH ustawien niezaleznie od rozmiaru.
+    # Settings grew with every feature and stopped fitting an unmaximised window.
+    # Canvas plus scrollbar plus mouse wheel: ALL settings reachable at any window size.
     _s_wrap = tk.Frame(t3, bg="#1a1714"); _s_wrap.pack(fill="both", expand=True)
     _s_cv   = tk.Canvas(_s_wrap, bg="#1a1714", highlightthickness=0)
     _s_sb   = ttk.Scrollbar(_s_wrap, orient="vertical", command=_s_cv.yview)
@@ -5350,9 +5350,9 @@ def run_gui():
     _s_cv.bind_all("<MouseWheel>", _s_wheel, add="+")
 
     # --- pasek zakladek wewnetrznych ---------------------------------------------------
-    # Wszystkie kontrolki leza na JEDNEJ siatce z unikalnymi numerami wierszy, wiec zakladki
-    # realizujemy przez grid_remove()/grid() na zakresach wierszy. grid_remove zachowuje
-    # konfiguracje komorki, wiec powrot jest bezstratny - i nie ruszamy kodu tworzacego widgety.
+    # All controls sit on ONE grid with unique row numbers, so pages are built by
+    # implemented with grid_remove()/grid() over row ranges. grid_remove preserves the
+    # hiding rows rather than rebuilding: grid_remove() keeps the cell config, so returning is lossless.
     SET_PAGES = [
         ("Station",     "\U0001F5A5", list(range(0, 8))),
         ("Integrations","\U0001F50C", list(range(8, 22))),
@@ -5370,14 +5370,14 @@ def run_gui():
 
     _set_map = {"rows": None}
 
-    # --- wygaszanie opcji, ktore rozwiazuja sie same (3.0) ------------------------------
+    # --- dimming options that resolve themselves ---------------------------------------
     # Paczka instalacyjna dostarcza dzis Items.csv, customers.csv, sounds\ i bin_contents.csv,
-    # a foldery archiwum tworza sie obok exe. Wybor sciezki do czegos, co i tak przyjezdza
-    # z aktualizacja, jest juz tylko okazja do pomylki. Wiersz znika, gdy ustawienie
-    # wskazuje dokladnie na to, co dostarcza paczka.
-    # SWIADOMIE NIE chowamy pustych: puste znaczy, ze autowykrywanie NIE zadzialalo,
-    # czyli dokladnie wtedy pole jest potrzebne do naprawy.
-    # NIE chowamy watch_dir ani update_dir - one definiuja stacje, nie sa dostarczane.
+    # and archive folders are created next to the exe. Choosing a path for something that
+    # arrives with the update anyway is only an opportunity for error. The row disappears
+    # when the setting points exactly at what the package delivers.
+    # Empty values are DELIBERATELY left visible: empty means auto-detection FAILED,
+    # which is exactly when the field is needed to fix things.
+    # watch_dir and update_dir are never hidden: they define the station and are not delivered.
     SETTINGS_AUTO_ROWS = {
         1:  ("archive_dir_pick", "Archiwum_Picks"),
         2:  ("archive_dir_pa",   "Archiwum_PutAways"),
@@ -5389,12 +5389,12 @@ def run_gui():
     _set_adv = {"on": bool(cfg.get("settings_show_all"))}
 
     def _auto_rows():
-        """Wiersze wygaszone, bo ustawienie pokrywa sie z zawartoscia paczki."""
+        """Rows dimmed because the setting matches what the package already provides."""
         base = app_base_dir()
         hide = set()
         for _row, (_key, _name) in SETTINGS_AUTO_ROWS.items():
-            # CALE cialo w try: ta funkcja leci przy KAZDYM przelaczeniu zakladki
-            # Settings, wiec wyjatek tutaj wywalilby renderowanie calej strony.
+            # The WHOLE body sits in a try: this runs on EVERY switch of the Settings
+            # page, so an exception here would take down the entire page render.
             try:
                 val = (cfg.get(_key) or "").strip()
                 if not val:
@@ -5403,14 +5403,14 @@ def run_gui():
                     hide.add(_row)
             except Exception as e:
                 logln(f"⚠ Settings: nie moge porownac sciezki {_key}: {str(e)[:60]}")
-        # Plik lokacji lezy zwykle w folderze aktualizacji, nie obok exe - stad osobny slad.
+        # The location file usually lives in the update folder rather than next to the exe, hence a separate trace.
         if cfg.get("_bin_export_auto"):
             hide.add(22)
         return hide
 
     def _show_page(name):
-        # UWAGA: grid_remove() usuwa widget z grid_slaves(), wiec po ukryciu strony
-        # nie dalo by sie jej odnalezc. Mape widget->wiersz robimy RAZ, zanim cokolwiek zniknie.
+        # NOTE: grid_remove() drops the widget from grid_slaves(), so a hidden page
+        # could never be found again. The widget-to-row map is built ONCE, before anything disappears.
         if _set_map["rows"] is None:
             snap = []
             for w in sf.grid_slaves():
@@ -5446,9 +5446,9 @@ def run_gui():
                        padx=16, pady=8, command=lambda n=_n: _show_page(n))
         _b.pack(side="left", padx=(0, 2))
         _tab_btns[_n] = _b
-    # Wyjscie awaryjne dla wygaszonych wierszy. NIE usuwamy opcji, tylko chowamy:
-    # gdy autowykrywanie zawiedzie inaczej niz przewidzielismy, musi byc czym to
-    # naprawic bez edycji ~/.pickcore_converter.json przez telefon.
+    # An escape hatch for dimmed rows. Options are hidden, never removed:
+    # when auto-detection fails in a way nobody predicted, there has to be a way
+    # to fix it without dictating JSON edits over the phone.
     v_adv = tk.BooleanVar(value=_set_adv["on"])
     def _toggle_adv():
         _set_adv["on"] = bool(v_adv.get())
@@ -5642,7 +5642,7 @@ def run_gui():
     _depf=tk.Frame(sf,bg="#1a1714"); _depf.grid(row=23,column=1,sticky="w",pady=(10,0))
     tk.Label(_depf,text="DEPLOYMENT",fg="#7a6c58",bg="#1a1714",font=("Bahnschrift",8,"bold")).pack(side="left",padx=(0,8))
     def _export_profile():
-        """Zapisuje wzorzec ustawien obok exe. Nowa stacja: skopiuj folder - reszta konfiguruje sie sama."""
+        """Writes the settings template next to the exe. A new station only needs the folder copied."""
         try:
             save_settings()                      # najpierw utrwal to, co na ekranie
             prof = {k: v for k, v in cfg.items() if k not in STATION_KEYS}
@@ -5661,9 +5661,9 @@ def run_gui():
     tk.Button(_depf,text="\U0001F4E6  Export station profile",command=_export_profile,bg="#5a4a38",
               fg="#cfc3b0",relief="flat",font=("Bahnschrift",9)).pack(side="left")
     def _install_refresh_task():
-        """Zaklada zadanie w Harmonogramie Windows (poziom uzytkownika - BEZ admina).
+        """Registers a Windows scheduled task at user level, with NO admin rights.
            UWAGA: tylko na stacji, ktora ma skoroszyt i poswiadczenia BC. Pozostale stanowiska
-           czytaja gotowy plik z udzialu sieciowego - nie powielamy poswiadczen."""
+           read the finished file from a network share, so credentials are never duplicated."""
         ps1 = os.path.join(app_base_dir(), "Refresh-BinExport.ps1")
         if not os.path.exists(ps1):
             messagebox.showwarning("Auto-refresh",
@@ -5708,14 +5708,14 @@ def run_gui():
               font=("Bahnschrift",8)).pack(side="left",padx=4)
 
     def _install_update():
-        """Podmiana W MIEJSCU (ta sama sciezka = regula zapory zostaje), po zamknieciu aplikacji.
-           Skrypt czeka na wyjscie procesu, robi kopie zapasowa, kopiuje nowa wersje i restartuje."""
+        """IN-PLACE replacement (same path keeps the firewall rule), after the app has closed.
+           The script waits for the process to exit, backs up, copies the new version and restarts."""
         src = (v_upd.get() or "").strip()
         newer, ver, info = check_update(src)
         if not newer:
             messagebox.showinfo("Update", f"No newer version available.\nYou have {APP_VERSION}. {info}"); return
-        # synced folder/udzial synchronizuja pliki w losowej kolejnosci - VERSION.txt potrafi
-        # dotrzec przed exe. Bez tej kontroli update ruszylby na niekompletnej paczce.
+        # A synced folder or share replicates files in arbitrary order, so VERSION.txt can
+        # arrive before the exe. Without this check an update would start on an incomplete package.
         try:
             exes = [f for f in os.listdir(src) if f.lower().endswith(".exe")]
             internal = os.path.join(src, "_internal")
@@ -5726,11 +5726,11 @@ def run_gui():
                 if len(os.listdir(internal)) < 5: probs.append("_internal wyglada na niekompletny")
             if exes and os.path.getsize(os.path.join(src, exes[0])) < 500_000:
                 probs.append("exe podejrzanie maly (placeholder synced folder?)")
-            # Instalator robi robocopy /MIR na folder exe, wiec plik, ktorego w paczce
-            # NIE MA, zostaje na stacji SKASOWANY - nie pominiety. Dlatego sprawdzamy
+            # The installer runs robocopy /MIR on the exe folder, so a file MISSING from the
+            # package is DELETED on the station, not skipped. Hence the check
             # obecnosc I rozmiar: synced folder potrafi dostarczyc zaslepke 0-bajtowa.
-            # Swiadomie NIE dodajemy tych plikow do /XF: maja jezdzic z aktualizacja,
-            # a wlasciwa ochrona jest tutaj, przed startem kopiowania.
+            # These files are DELIBERATELY not added to /XF: they should travel with the update,
+            # and the real protection belongs here, before copying starts.
             for _f, _min in (("Items.csv", 100_000), ("customers.csv", 1_000)):
                 _p = os.path.join(src, _f)
                 if not os.path.exists(_p):
@@ -5750,12 +5750,12 @@ def run_gui():
             if not messagebox.askyesno("Update",
                 "A session is in progress (pick or put-away).\n"
                 "The update will close the application.\n\nContinue anyway?"): return
-        # /XD w skrypcie ponizej NIE jest kosmetyka. Instalator robi robocopy /MIR,
-        # wiec KAZDY folder obecny w paczce nadpisuje odpowiednik na stacji, a folder
-        # nieobecny w paczce zostaje SKASOWANY. Logi i Archiwum_* to dane OPERATORA,
-        # ktore powstaja lokalnie na kazdym stanowisku:
-        #   - Logi\pickcore_events.jsonl to zrodlo dashboardu Impact,
-        #   - Archiwum_PutAways to podpisane arkusze przyjec.
+        # The /XD below is NOT cosmetic. The installer runs robocopy /MIR,
+        # so EVERY folder present in the package overwrites its counterpart, and a folder
+        # absent from the package is DELETED. Logs and archives are OPERATOR data,
+        # created locally on every station:
+        #   - Logs\pickcore_events.jsonl feeds the Impact dashboard,
+        #   - the put-away archive holds signed receipt sheets.
         # If anyone built a package after running the app from dist (a single smoke
         # test is enough), those folders would ship inside it and wipe the archives
         # on every station. *.log is not enough, because events live in .jsonl.
@@ -5790,7 +5790,7 @@ Start-Sleep -Seconds 2
             subprocess.Popen(["powershell", "-WindowStyle", "Normal", "-ExecutionPolicy", "Bypass", "-File", up])
             log_event("APP_UPDATE", frm=APP_VERSION, to=ver)
             logln(f"\u2191 Update {APP_VERSION} \u2192 {ver}: closing application\u2026")
-            # Okno postepu: operator widzi, ze cos sie dzieje, zamiast patrzec na znikajaca apke.
+            # Progress window: the operator sees something happening instead of a vanishing app.
             win = tk.Toplevel(root); win.title("PickCore - update")
             win.configure(bg=UI["panel"]); win.attributes("-topmost", True)
             win.geometry("430x170"); win.resizable(False, False)
@@ -5822,7 +5822,7 @@ Start-Sleep -Seconds 2
     v_bcws=tk.StringVar(value=cfg.get("bc_ws") or "Bin_Contents_List")
     tk.Entry(_bcf3,textvariable=v_bcws,width=22).pack(side="left",padx=(0,10))
     def bc_test():
-        """Diagnostyka: token -> 1 wiersz -> nazwy pol. Bez zgadywania, co BC faktycznie wystawia."""
+        """Diagnostics: token, one row, field names. No guessing what the ERP actually exposes."""
         probe = dict(cfg)
         probe.update(bc_enabled=True, bc_base_url=v_bcurl.get().strip().rstrip("/"),
                      bc_company=v_bccmp.get().strip(), bc_tenant=v_bctn.get().strip(),
@@ -5851,7 +5851,7 @@ Start-Sleep -Seconds 2
             except Exception as e:
                 msg = str(e)[:140]
                 if "404" in msg:
-                    # 404 = uwierzytelnienie OK, zla sciezka. Odpytaj katalog uslug i pokaz prawdziwe nazwy.
+                    # 404 means authentication succeeded but the path is wrong. Query the service catalogue and show the real names.
                     try:
                         import urllib.request as _u
                         root_url = f'{probe["bc_base_url"]}/ODataV4/'
@@ -5903,9 +5903,9 @@ Start-Sleep -Seconds 2
         if d: v_cldd.set(d)
     tk.Button(_cldfr,text="\u2026",command=_pick_cloud_dir,bg="#5a4a38",fg="#cfc3b0",relief="flat").pack(side="left",padx=4)
 
-    # --- WATCHER: skanowanie folderu co 2s (odporne na zapis BC przez temp+rename) ---
+    # --- WATCHER: folder scan every 2s, tolerant of temp-plus-rename writes ---
     def _prime_seen(d):
-        """Oznacz istniejace pliki jako widziane - przetwarzamy tylko NOWE po starcie."""
+        """Marks existing files as seen, so only NEW ones are processed after startup."""
         try:
             for fn in os.listdir(d):
                 if fn.lower().endswith(".pdf"): seen.add(os.path.join(d, fn))
@@ -5965,14 +5965,14 @@ Start-Sleep -Seconds 2
             full = os.path.join(d, fn)
             if full in seen: continue
             seen.add(full)
-            # typ rozpoznaje process_pdf z ZAWARTOSCI - nazwa pliku nieistotna
+            # process_pdf detects the type from the CONTENT; the file name is irrelevant
             def work(path=full):
                 if not wait_stable(path): return
                 process_pdf(path, cfg, customers, log_q.put, on_pick=lambda pd: new_picks.put(pd), on_putaway=lambda h,r: pa_q.put((h,r)))
             threading.Thread(target=work, daemon=True).start()
 
     def drain_logs():
-        """Loguje wpisy z watkow roboczych w GLOWNYM watku (Tkinter nie jest thread-safe)."""
+        """Logs entries from worker threads on the MAIN thread (Tkinter is not thread safe)."""
         try:
             while True: logln(log_q.get_nowait())
         except _queue.Empty: pass
@@ -5990,7 +5990,7 @@ Start-Sleep -Seconds 2
     nb.insert(1, t_in, text="Put-away", group="INBOUND", fkey="F2", icon="📥")
     def _nav_serial():
         """Serial jako pozycja pierwszej klasy w sidebarze: przelacza na stacje i odpala
-           istniejacy tryb (serial w picku lub wolna sesje) - zero przepinania widzetow."""
+           the existing mode (serials within a pick, or a free session) with no widget re-parenting."""
         nb.select(t1)
         if serial_mode["on"] or session["on"]:
             scan_entry.focus_set(); return
@@ -6013,8 +6013,8 @@ Start-Sleep -Seconds 2
         except Exception as e:
             scanner_state["err"] = f"port {port}: {e}"; return
         def _serve(conn, addr):
-            """Jedno polaczenie = jeden watek. Bez tego DRUGI skaner czekalby, az pierwszy sie rozlaczy
-               (DataWedge trzyma sesje TCP otwarta) - realny scenariusz przy wielu stanowiskach."""
+            """One connection, one thread. Without it a SECOND scanner would wait for the first to disconnect
+               (DataWedge holds the TCP session open), which is the normal case with several stations."""
             try:
                 scanner_state["peer"] = addr[0]
                 scanner_state["peers"] = sorted(set(scanner_state.get("peers", []) + [addr[0]]))
@@ -6048,13 +6048,13 @@ Start-Sleep -Seconds 2
                 code = scan_net_q.get_nowait()
                 logln(f"\U0001F4E1 TC22 scan: {code}")
                 log_event("SCAN_REMOTE", code=code, src=scanner_state.get("peer",""))
-                # TTL wydluzony do 30 min: przy zgaszonym ekranie skanera przegladarka przestaje
-                # odpytywac serwer, wiec heartbeat milknie i krotki TTL wyrzucal skany na stacje pickowa.
+                # TTL raised to 30 min: with the handheld screen off the browser stops polling,
+                # so the heartbeat goes quiet and a short TTL used to divert scans back to the desktop station.
                 fresh = (time.time() - web_focus["ts"]) < 1800
                 hv = web_focus["view"] if fresh else ""
                 b, okb = format_bin_input(code)
                 # Trwajaca sekwencja relokacji ma PIERWSZENSTWO nad wygaslym fokusem:
-                # skoro operator ma otwarty item albo bin zrodlowy, kolejny skan nalezy do niej.
+                # with an item or a source bin open, the next scan belongs to that sequence.
                 if rel.get("pend", {}).get("sku"):
                     rel_feed(code); render_web_state(); continue
                 if hv == "inbound" and pa["lines"] and okb:
@@ -6088,7 +6088,7 @@ Start-Sleep -Seconds 2
                          (cfg.get("scanner_allow") or "").strip()), daemon=True).start()
     root.after(400, drain_scanner)
 
-    # ---------- CLOUD LIVE BOARD (synced folder; tylko stan stacji, zero danych wrazliwych) ----------
+    # ---------- CLOUD LIVE BOARD (synced folder; station state only, no sensitive data) ----------
     def _live_html(refresh=5):
         rows = "".join(f"<tr><td class='t'>{html.escape(t)}</td><td>{html.escape(m)}</td></tr>"
                        for t, m in reversed(live_ring))
@@ -6111,7 +6111,7 @@ Start-Sleep -Seconds 2
             f"\u00B7 {len(pa_pending)} pending</div>"
             f"<div class='card'><b>Last events</b><table>{rows}</table></div></body></html>")
     def live_cache_tick():
-        """Render w glownym watku Tk (bezpieczny odczyt widzetow); konsumenci czytaja gotowy string."""
+        """Rendered on the main Tk thread, where reading widgets is safe; consumers read the finished string."""
         try:
             if cloud_state.get("dirty"):
                 cloud_state["html"] = _live_html(refresh=2)
@@ -6136,8 +6136,8 @@ Start-Sleep -Seconds 2
 
     # ================= HANDHELD WEB CONSOLE (LAN only) =================
     # Kontrakt (przenosny 1:1 do portu portfolio):
-    #   - watek HTTP NIGDY nie dotyka widzetow Tk. Czyta wylacznie snapshot JSON (web_state)
-    #     renderowany w glownym watku i wrzuca polecenia do web_cmd_q.
+    #   - the HTTP thread NEVER touches Tk widgets. It reads only the JSON snapshot (web_state)
+    #     rendered on the main thread, and pushes commands onto web_cmd_q.
     #   - glowny watek: render_web_state() + drain_web() -> pelna serializacja, zero wyscigow.
     #   - Powierzchnia API: GET / (konsola), GET /api/state, POST /api/cmd.
     http_state = {"on": False, "err": ""}
@@ -6148,7 +6148,7 @@ Start-Sleep -Seconds 2
     web_cmd_q = _queue.Queue()
 
     def render_web_state():
-        """Snapshot stanu stacji dla konsoli handheld. Tylko glowny watek Tk."""
+        """Station state snapshot for the handheld console. Main Tk thread only."""
         try:
             lines = [{"i": i, "sku": l.get("sku",""), "desc": (l.get("desc") or "")[:34],
                       "qty": l.get("qty",""), "bin": l.get("bin",""),
@@ -6164,7 +6164,7 @@ Start-Sleep -Seconds 2
             cur = station.get("cur")
             plines, pdone, pneed = [], 0, 0
             if cur and not session["on"]:
-                # kolejnosc jak na wydruku: rosnaco po lokacji (D -> G), a nie kolejnosc z PDF
+                # same order as the printout: ascending by location, not the order found in the PDF
                 _order = sorted(range(len(cur["items"])),
                                 key=lambda k: bin_sort_key(cur["items"][k].get("bin","")))
                 for idx in _order:
@@ -6218,14 +6218,14 @@ Start-Sleep -Seconds 2
             }
             web_state["json"] = json.dumps(snap, ensure_ascii=False)
         except Exception as e:
-            # NAJGROZNIEJSZY z cichych wyjatkow w tym pliku: konsola na TC22 zamiera
+            # The MOST DANGEROUS silent exception in this file: the handheld console freezes
             # na ostatnim dobrym snapshocie, HTTP odpowiada 200, testy API przechodza,
-            # a operator przy regale nie widzi zmian. Ta klasa awarii kosztowala tydzien.
+            # and the operator at the rack sees no updates. This class of failure cost a week.
             web_state["err"] = str(e)[:120]
             logln(f"⚠ Console snapshot FAILED: {str(e)[:90]}")
 
     def drain_web():
-        """Wykonuje polecenia z konsoli handheld w glownym watku."""
+        """Executes commands from the handheld console on the main thread."""
         try:
             while True:
                 c = web_cmd_q.get_nowait()
@@ -6291,7 +6291,7 @@ Start-Sleep -Seconds 2
                     remove_last_pick()
                 elif op == "pick_qty":
                     # BULK z reki: operator wskazuje linie i podaje ilosc (pudelko/paleta).
-                    # Ta sama sciezka ksiegowania co bulk na PC - liczniki, telemetria, dzwieki.
+                    # The same posting path as a desktop bulk entry: counters, telemetry, sounds.
                     try:
                         i, n = int(c.get("i", -1)), int(c.get("n", 0))
                     except Exception:
@@ -6320,7 +6320,7 @@ Start-Sleep -Seconds 2
                             _beep("line" if line["scanned"] >= line["need"] else "ok")
                             refresh_station(); check_complete()
                 elif op == "ser_pick":
-                    # wybor radia, do ktorego leca kolejne skany seriali
+                    # selects the unit that subsequent serial scans belong to
                     try: i = int(c.get("i", -1))
                     except Exception: i = -1
                     if serial_mode.get("on") and 0 <= i < len(serial_mode.get("radios") or []):
@@ -6330,7 +6330,7 @@ Start-Sleep -Seconds 2
                         logln(f"\U0001F4F1 Handheld: serial target \u2192 {r.get('sku','')} ({r.get('bin','')})")
                         _beep("ok")
                 elif op == "ser_pack":
-                    # rozmiar opakowania dla WSKAZANEGO radia (single / dual / quad / 6-pack)
+                    # pack size for the SELECTED unit (single / dual / quad / 6-pack)
                     try:
                         i, n = int(c.get("i", -1)), int(c.get("n", 1))
                     except Exception:
@@ -6357,7 +6357,7 @@ Start-Sleep -Seconds 2
     root.after(800, drain_bc)
 
     def _items_autoload():
-        """Katalog itemow przy starcie. Kolejnosc zrodel:
+        """Item catalogue at startup. Source order:
            1) plik wskazany w Settings, 2) katalog DOLACZONY DO PACZKI (obok exe).
            Dzieki (2) nowa stacja ma komplet opisow od pierwszego uruchomienia - zero konfiguracji."""
         try:
@@ -6382,7 +6382,7 @@ Start-Sleep -Seconds 2
     root.after(2200, _items_autoload)
 
     def _customers_autoload():
-        """Kartoteka klientow: sciezka z Settings, potem plik DOLACZONY DO PACZKI (obok exe)."""
+        """Customer file: the path from Settings first, then the copy SHIPPED IN THE PACKAGE next to the exe."""
         try:
             f = (cfg.get("customers_csv") or "").strip()
             if not (f and os.path.exists(f)):
@@ -6399,7 +6399,7 @@ Start-Sleep -Seconds 2
             logln(f"\u26A0 Customer database: {str(e)[:110]}")
     root.after(2400, _customers_autoload)
 
-    # ---------- AUTO-UPDATE: wykrycie nowej wersji na udziale (bez podmiany w trakcie pracy) ----------
+    # ---------- AUTO-UPDATE: detects a new version on the share, never swapping mid-shift ----------
     def _update_check(announce=False):
         def run():
             newer, ver, info = check_update(cfg.get("update_dir"))
@@ -6684,9 +6684,9 @@ pull();setInterval(pull,1500);
                     self.send_header("Cache-Control", "max-age=3600")
                     self.end_headers(); self.wfile.write(data); return
                 if path == "/api/state":
-                    # Heartbeat: konsola przy kazdym pollu mowi, gdzie stoi operator.
-                    # Bez tego fokus wygasal po 300 s (tapniesz zakladke przy biurku,
-                    # idziesz do regalu, skanujesz - i skan lecial juz w zly widok).
+                    # Heartbeat: on every poll the console reports where the operator is standing.
+                    # Without it the focus expired after 300 s: tap a tab at the desk,
+                    # walk to the rack, scan, and the scan landed in the wrong view.
                     try:
                         q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                         v = (q.get("view", [""])[0] or "").strip()
