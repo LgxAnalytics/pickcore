@@ -49,11 +49,11 @@ def app_base_dir():
     return os.path.dirname(os.path.abspath(__file__))
 
 def ensure_app_folders():
-    """Tworzy foldery archiwum i logow obok .exe. Zwraca (pick_dir, pa_dir, log_dir)."""
+    """Creates the archive and log folders next to the .exe. Returns (pick_dir, pa_dir, log_dir)."""
     base = app_base_dir()
-    pick_dir = os.path.join(base, "Archiwum_Picks")
-    pa_dir   = os.path.join(base, "Archiwum_PutAways")
-    log_dir  = os.path.join(base, "Logi")
+    pick_dir = os.path.join(base, "Archive_Picks")
+    pa_dir   = os.path.join(base, "Archive_PutAways")
+    log_dir  = os.path.join(base, "Logs")
     for d in (pick_dir, pa_dir, log_dir):
         try: os.makedirs(d, exist_ok=True)
         except Exception: pass
@@ -333,7 +333,7 @@ def _uniform(rows, key):
     return "-" if not vals else (next(iter(vals)) if len(vals)==1 else "MULTIPLE")
 
 def order_list(rows):
-    """Rozne numery zlecen w kolejnosci dokumentu."""
+    """Distinct job numbers, in document order."""
     seen, out = set(), []
     for r in rows:
         o = r.get("order","")
@@ -376,7 +376,7 @@ def _norm_sku(s):
     return s
 
 def sku_match(code, sku):
-    """Czy ZESKANOWANY kod odpowiada SKU z picking listy, tolerujac warianty kodu kreskowego:
+    """Whether a SCANNED code matches a SKU on the picking list, tolerating barcode variants:
        - dodatkowy prefiks (np. skan 'PPMNN4491E' = lista 'PMNN4491E')
        - sufiks 'B' = bulk (np. skan 'PMNN4491EB' = lista 'PMNN4491E')
        - oba naraz; plus marker regionu na LISCIE ('MDR11SDGANQ1AN EU' = skan bazy).
@@ -394,7 +394,7 @@ def sku_match(code, sku):
 
 QTY_SPEED_MAX_GAP_MS = 80     # scanner: inter-char usually 1-50ms (configurable); a human sustaining <80ms is not realistic
 def qty_speed_ok(times_ms):
-    """Heurystyka skaner-vs-czlowiek na SPRZETOWYCH timestampach zdarzen (event.time, ms).
+    """Scanner-versus-human heuristic on HARDWARE event timestamps (event.time, ms).
        Odporna na lag petli Tk (mierzy czas nacisniecia, nie obslugi). Zwraca (ok, n, max_ms, med_ms).
        Guard na wrap 32-bit licznika systemowego."""
     n = len(times_ms)
@@ -412,7 +412,7 @@ def qty_speed_ok(times_ms):
 def parse_scanned_qty(code):
     """Quantity from a scanner QTY code. Formats: 'Q'+number (Q30), 'qty'+number (qty20) or a bare number (30).
        UWAGA anti-cheat: gdy dopuszczamy samą liczbę, format przestaje chronic - caly ciezar bierze
-       lock predkosci (skaner wysyla blyskawicznie, reczne '30' ma odstepy >50ms)."""
+       speed lock (a scanner fires instantly, a hand-typed '30' leaves gaps above 50ms)."""
     c = (code or "").strip()
     m = re.match(r"^Q(?:TY)?\s*[:#x*\-]?\s*(\d+)$", c, re.I)
     if m: return int(m.group(1))
@@ -463,7 +463,7 @@ def bc_serial_export(serials, pack=1):
        Jednostka = OPAKOWANIE: jeden wiersz = jedno pudelko z 'pack' radiami.
        pack=1: serial<TAB>Yes<TAB><TAB>Yes<TAB>1<TAB>1 (potwierdzone).
        pack=2/4/6: 'pack' seriali w JEDNEJ komorce oddzielonych SPACJA (nie osobne kolumny) + kolumny formatu.
-       np. dual: 'SN1 SN2<TAB>Yes<TAB><TAB>Yes<TAB>1<TAB>1', kolejne pudelko nizej."""
+       for a dual pack: 'SN1 SN2<TAB>Yes<TAB><TAB>Yes<TAB>1<TAB>1', the next box on the row below."""
     pack = max(1, pack)
     rows = []
     for i in range(0, len(serials), pack):
@@ -482,7 +482,7 @@ def save_customers(d):
     CUSTOMERS_PATH.write_text(json.dumps(d, indent=2, ensure_ascii=False), encoding="utf-8")
 
 def load_serial_skus():
-    """Zapamietane SKU oznaczone recznie jako 'z numerem seryjnym' (znormalizowane, set)."""
+    """SKUs manually flagged as serialised, normalised and stored as a set."""
     if SERIAL_SKUS_PATH.exists():
         try: return set(json.loads(SERIAL_SKUS_PATH.read_text(encoding="utf-8")))
         except Exception: return set()
@@ -530,7 +530,7 @@ def learn_sku_desc(rows):
     except Exception: pass
 
 def import_item_descriptions(path):
-    """Import katalogu itemow z BC (kolumny: No.;Description). Wypelnia rejestr opisow OD RAZU,
+    """Item catalogue import (columns: No.;Description). Fills the description registry IMMEDIATELY,
        instead of waiting for the SKU to appear in a pick. Separator auto-detected (; , TAB |)."""
     import csv as _csv
     try:
@@ -856,7 +856,7 @@ PICKMAP_LOC = re.compile(r"^\d{2}-[A-Z]\d{2}-[A-Z]\d$")   # ZZ-RPP-LS grammar (m
 def pickmap_heat_data():
     """Aggregates telemetry into {exact_location: VISIT count} - exactly what
        czego oczekuje PickMap.heatmap() (czestotliwosc WIZYT).
-       Kody spoza gramatyki (CROSSDOCKING/WARRANTY/...) -> unmapped (pokazywane w banerze)."""
+       Codes outside the grammar (CROSSDOCKING/WARRANTY/...) become unmapped and are listed in the banner."""
     from collections import Counter
     heat, unmapped = Counter(), Counter()
     for ev in load_telemetry():
@@ -946,7 +946,7 @@ def print_zpl_raw(zpl, printer):
         win32print.ClosePrinter(h)
 
 def append_print_log(kit_id, copies, printer, status):
-    """Audit trail wydrukow -> Logi/print_log.csv (v11 pisal do CWD - poprawione)."""
+    """Print audit trail written to Logs/print_log.csv (an earlier version wrote to CWD)."""
     try:
         import csv as _csv
         _,_,ld = ensure_app_folders()
@@ -973,7 +973,7 @@ def autostart_get():
     except Exception:
         return False
 def autostart_set(enable):
-    """Wlacza/wylacza start z systemem. Zwraca (ok, msg)."""
+    """Enables or disables start with Windows. Returns (ok, msg)."""
     try:
         import winreg
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _RUN_KEY, 0, winreg.KEY_SET_VALUE) as k:
@@ -1229,7 +1229,7 @@ def _value_below(words, page_width, label_tokens, ymax=26):
 
 
 def parse_shipment(path):
-    """Sales Shipment PDF -> slownik danych. Adres bierzemy POZYCYJNIE (lewa kolumna),
+    """Sales shipment PDF into a data dictionary. The address is read POSITIONALLY (left column),
        because in linear text it interleaves with the reference column on the right."""
     if pdfplumber is None:
         raise RuntimeError("Brak pdfplumber. Zainstaluj: py -3.14 -m pip install pdfplumber")
@@ -1367,7 +1367,7 @@ def _cust_key(name):
     return n
 
 def load_customer_db(path):
-    """Kartoteka klientow z BC (No.;Name;Address;City;Contact;Phone No.;Email).
+    """Customer file export (No.;Name;Address;City;Contact;Phone No.;Email).
        Used ONLY to fill gaps - the address on the document always wins."""
     import csv as _csv
     if not path or not os.path.exists(path):
@@ -1720,7 +1720,7 @@ def load_bin_export(path):
     """Third location source: a CSV/TSV exported from Power Query (Excel authenticates
        JAKO UZYTKOWNIK - omija ograniczenia service principala).
        Kolumny wykrywane elastycznie: cokolwiek zawierajace item / bin / qty|quantity|base.
-       Zwraca (rekordy, info)."""
+       Returns (records, info)."""
     import csv as _csv
     rows, info = [], ""
     try:
@@ -1858,7 +1858,7 @@ def find_pickmap_template():
        (the rack view is self-contained like the 3D view; an external file still takes priority)."""
     import glob as _g
     base = app_base_dir()
-    dirs = (base, os.path.dirname(base), os.path.join(base, "Logi"))
+    dirs = (base, os.path.dirname(base), os.path.join(base, "Logs"))
     for d in dirs:
         p = os.path.join(d, "pickmap_template.html")
         if os.path.exists(p): return p
@@ -2032,7 +2032,7 @@ def analyze_warehouse(tele):
        - koszt strefy = MEDIANA cykli pickow 1-LINIOWYCH per strefa (naturalna kalibracja:
          staly narzut wziecia kartki skraca sie przy POROWNYWANIU stref)
        - picki z kolejki (queued) wykluczone z czasow - stacja byla zajeta, cykl zawyzony
-       Zwraca: items (ABC), zones (heat), zone_cost, movers, pairs, thru, summary."""
+       Returns: items (ABC), zones (heat), zone_cost, movers, pairs, thru, summary."""
     from statistics import median
     from itertools import combinations
     items = {}; zones = {}; pairs = {}
@@ -2341,8 +2341,8 @@ body{font-family:'Inter','Bahnschrift',sans-serif;color:#000;background:#5c5f66;
 """
 
 def _pa_boxes(bin_code=""):
-    """Szablon binu 2-3-2 ([_][_]-[_][_][_]-[_][_]). Pusty = do recznego wpisu na wydruku;
-       z bin_code = kratki WYPELNIONE (cyfrowy blizniak kartki do archiwum)."""
+    """Bin template 2-3-2 ([_][_]-[_][_][_]-[_][_]). Empty means it is filled in by hand on the printout;
+       with bin_code the boxes are PRE-FILLED, giving a digital twin of the paper sheet."""
     ch=re.sub(r"[^A-Z0-9]","",(bin_code or "").upper())[:7].ljust(7)
     def grp(a,b): return ''.join(f'<span class="bxc">{c.strip()}</span>' for c in ch[a:b])
     boxes = ('<div class="boxes">'+grp(0,2)+'<span class="dash">-</span>'
@@ -2528,7 +2528,7 @@ def _ver_tuple(v):
     return tuple(out + [0] * (4 - len(out)))[:4]
 
 def check_update(update_dir):
-    """Czyta manifest z udzialu sieciowego. Zwraca (jest_nowsza, wersja, info)."""
+    """Reads the manifest from the network share. Returns (is_newer, version, info)."""
     try:
         d = (update_dir or "").strip()
         if not d: return False, "", "no path set"
@@ -2641,7 +2641,7 @@ def unique_pa_path(folder, base, ext=".html"):
 # ==================================================================== PIPELINE
 def process_pdf(pdf_path, cfg, customers, logfn=print, on_pick=None, on_putaway=None):
     """Pelny przeplyw. Wykrywa Pick vs Put-away i routuje do wlasciwego arkusza.
-       on_pick(pick_data) - opcjonalny callback przekazujacy itemy do stacji walidacji."""
+       on_pick(pick_data) - optional callback handing the items to the validation station."""
     name = os.path.basename(pdf_path)
     dtype, hdr, source, rows, warns = parse_document(pdf_path)
     if dtype == "unknown" or not rows:
@@ -3126,7 +3126,7 @@ def run_gui():
     btn_manual.pack(side="left", padx=3, pady=6)
     btn_serial = tk.Button(scan_fr, text="🔖 Serial", bg=UI["accent"], fg="white", relief="flat", font=("Bahnschrift",10), width=9, cursor="hand2")
     btn_serial.pack(side="left", padx=(3,10), pady=6)
-    # przyciski trybu seriali (ukryte do momentu wejscia w tryb)
+    # serial mode buttons, hidden until that mode is entered
     btn_back = tk.Button(scan_fr, text="← Pick", bg=UI["panel2"], fg=UI["text"], relief="flat", font=("Bahnschrift",10,"bold"), width=7, cursor="hand2")
     btn_copy = tk.Button(scan_fr, text="📋 Copy serials", bg=UI["ok"], fg="white", relief="flat", font=("Bahnschrift",10,"bold"), width=14, cursor="hand2")
     btn_undo = tk.Button(scan_fr, text="↶ Undo", bg=UI["serial"], fg="white", relief="flat", font=("Bahnschrift",10,"bold"), width=8, cursor="hand2")
@@ -3732,7 +3732,7 @@ def run_gui():
         except Exception: pass
         return len(d["entries"])
     def _pa_archive_dir():
-        p=cfg.get("archive_dir_pa") or os.path.join(app_base_dir(),"Archiwum_PutAways")
+        p=cfg.get("archive_dir_pa") or os.path.join(app_base_dir(),"Archive_PutAways")
         os.makedirs(p, exist_ok=True); return p
     _confirming={"on":False}
     def confirm_putaway(auto=False):
@@ -5379,8 +5379,8 @@ def run_gui():
     # which is exactly when the field is needed to fix things.
     # watch_dir and update_dir are never hidden: they define the station and are not delivered.
     SETTINGS_AUTO_ROWS = {
-        1:  ("archive_dir_pick", "Archiwum_Picks"),
-        2:  ("archive_dir_pa",   "Archiwum_PutAways"),
+        1:  ("archive_dir_pick", "Archive_Picks"),
+        2:  ("archive_dir_pa",   "Archive_PutAways"),
         22: ("bin_export_path",  "bin_contents.csv"),
         27: ("items_csv",        "Items.csv"),
         29: ("sound_dir",        "sounds"),
@@ -5774,7 +5774,7 @@ Write-Host "  [2/4] Kopia zapasowa..."
 if (Test-Path "{bak}") {{ Remove-Item "{bak}" -Recurse -Force }}
 Copy-Item "{dst}" "{bak}" -Recurse -Force
 Write-Host "  [3/4] Kopiowanie nowej wersji..."
-robocopy "{src}" "{dst}" /MIR /XF config.json pickcore_profile.json bin_contents.csv *.log *.jsonl /XD Logi Archiwum_Picks Archiwum_PutAways /NFL /NDL /NJH /NJS
+robocopy "{src}" "{dst}" /MIR /XF config.json pickcore_profile.json bin_contents.csv *.log *.jsonl /XD Logi Archive_Picks Archive_PutAways /NFL /NDL /NJH /NJS
 if ($LASTEXITCODE -ge 8) {{
   Write-Host "BLAD kopiowania - przywracam kopie zapasowa"
   robocopy "{bak}" "{dst}" /MIR /NFL /NDL /NJH /NJS
