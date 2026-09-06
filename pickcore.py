@@ -33,9 +33,9 @@ import getpass
 import pdfplumber
 
 try:
-    import win32print                      # v3.0 fix: print_zpl_raw uzywal win32print bez importu (NameError)
+    import win32print                      # v3.0 fix: print_zpl_raw used win32print without importing it (NameError)
 except Exception:
-    win32print = None                      # srodowiska bez pywin32 (dev/test) - druk RAW niedostepny
+    win32print = None                      # environments without pywin32 (dev/test) - RAW printing unavailable
 
 def resource_path(rel):
     """Sciezka do zasobu (dziala tez w spakowanym .exe przez PyInstaller _MEIPASS)."""
@@ -43,7 +43,7 @@ def resource_path(rel):
     return os.path.join(base, rel)
 
 def app_base_dir():
-    """Folder, w ktorym lezy .exe (lub skrypt) - tu tworzymy archiwa i logi."""
+    """Directory holding the .exe (or the script) - archives and logs are created here."""
     if getattr(sys, "frozen", False):
         return os.path.dirname(sys.executable)
     return os.path.dirname(os.path.abspath(__file__))
@@ -59,23 +59,23 @@ def ensure_app_folders():
         except Exception: pass
     return pick_dir, pa_dir, log_dir
 
-# Cicha awaria zapisu na dysk juz raz kosztowala kartoteke klientow: "except: pass"
-# ukryl NameError i nikt nie wiedzial, ze cos sie nie zaladowalo. Problem w tym, ze
-# write_log_file i log_event SA mechanizmem logowania - nie moga zglaszac wlasnych
-# bledow przez logln, bo zapetlilyby sie. Dlatego zbieramy je tutaj, a GUI wyciaga
-# je do widoku Logs w drain_io_fails().
-IO_FAILS = []          # [(gdzie, powod)] - kolejka do wypisania w Logs
+# A silent disk write failure once cost a whole customer file: "except: pass"
+# hid a NameError and nobody knew something had failed to load. The catch is that
+# write_log_file and log_event ARE the logging mechanism - they cannot report their own
+# errors through logln without looping. So they are collected here and the GUI pulls
+# them into the Logs view in drain_io_fails().
+IO_FAILS = []          # [(where, reason)] - queue to surface in Logs
 
 def note_io_fail(where, err):
-    """Rejestruje nieudane I/O bez uzycia logln. Bezpieczne z watkow roboczych."""
+    """Records failed I/O without using logln. Safe to call from worker threads."""
     try:
-        if len(IO_FAILS) < 200:            # gorny limit: gdy GUI nie drenuje, nie rosniemy w nieskonczonosc
+        if len(IO_FAILS) < 200:            # upper bound: if the GUI stops draining, this must not grow without limit
             IO_FAILS.append((where, str(err)[:120]))
     except Exception:
         pass
 
 def write_log_file(line):
-    """Dopisuje wpis do trwalego pliku logu (obok .exe)."""
+    """Appends an entry to the persistent log file (next to the .exe)."""
     try:
         _, _, log_dir = ensure_app_folders()
         with open(os.path.join(log_dir, "pickcore_log.txt"), "a", encoding="utf-8") as f:
@@ -84,8 +84,8 @@ def write_log_file(line):
         note_io_fail("write_log_file", e)
 
 def local_ip():
-    """IP tej stacji w sieci magazynowej (bez ipconfig): socket UDP nie wysyla pakietu,
-       ale system wybiera interfejs uzyty do wyjscia - to ten sam, ktorym przyjdzie skaner."""
+    """This station's IP on the warehouse network (no ipconfig): the UDP socket sends nothing,
+       but the OS still picks the outbound interface - the same one the scanner will arrive on."""
     import socket as _s
     try:
         k = _s.socket(_s.AF_INET, _s.SOCK_DGRAM); k.settimeout(0.3)
@@ -102,20 +102,20 @@ def events_path():
     return os.path.join(log_dir, "pickcore_events.jsonl")
 
 def log_event(etype, **data):
-    """Strukturalne zdarzenie do metryk/audytu (JSONL, jeden wiersz = jedno zdarzenie).
+    """Structured event for metrics and audit (JSONL, one row = one event).
        To zrodlo dashboardu 'ile zlapano bledow / uchroniono przed strata'.
-       Kazde zdarzenie ma operatora (login Windows) i wersje appki - wymiar 'kto' i 'czym' za darmo."""
+       Every event carries the operator (Windows login) and the app version - 'who' and 'with what' for free."""
     try:
         rec = {"ts": datetime.now().isoformat(timespec="seconds"), "type": etype,
                "op": get_picker(), "app": APP_VERSION}
         rec.update(data)
         if etype == "PICK_TELEMETRY":
-            rec.pop("op", None)   # PRYWATNOSC (AVG/OR): telemetria mierzy MAGAZYN, nie ludzi - bez operatora
+            rec.pop("op", None)   # PRIVACY (GDPR): telemetry measures the WAREHOUSE, not people - operator omitted
         with open(events_path(), "a", encoding="utf-8") as f:
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
     except Exception as e:
-        # To jest zrodlo dashboardu Impact. Cicha awaria = metryki po prostu znikaja,
-        # a nikt nie zauwaza, bo wykres dalej sie rysuje, tylko plaski.
+        # This feeds the Impact dashboard. A silent failure means metrics simply vanish,
+        # and nobody notices, because the chart still draws, just flat.
         note_io_fail(f"log_event({etype})", e)
 
 def load_events():
@@ -133,7 +133,7 @@ def load_events():
     except Exception: pass
     return out
 
-# zdarzenia liczone jako "zlapany blad / uchroniona strata"
+# events counted as "error caught / loss prevented"
 ERROR_EVENTS = ("WRONG_ITEM", "OVERPICK", "BULK_BLOCKED")
 
 APP_VERSION = "1.0"
@@ -144,7 +144,7 @@ CUSTOMERS_PATH = HOME / ".pickcore_customers.json"
 SERIAL_SKUS_PATH = HOME / ".pickcore_serial_skus.json"
 BULK_PROFILE_PATH = HOME / ".pickcore_bulk_profile.json"
 KNOWN_SKUS_PATH  = HOME / ".pickcore_known_skus.json"
-SKU_DESC_PATH    = HOME / ".pickcore_sku_desc.json"   # SKU -> opis, uczony z pickow i put-awayow
+SKU_DESC_PATH    = HOME / ".pickcore_sku_desc.json"   # SKU -> description, learned from picks and put-aways
 
 # ==================================================================== parser v2
 COLS = {"qty":(0,90),"item":(90,240),"desc":(240,457),"bin":(457,535),
@@ -210,7 +210,7 @@ def parse_pick(path):
     if not rows: warnings.append("No lines detected - may not be a Warehouse Pick PDF")
     return header_no, rows, warnings
 
-# --- PUT-AWAY: inna struktura kolumn niz pick ---
+# --- PUT-AWAY: column layout differs from picking ---
 PA_COLS = {"item":(0,150),"desc":(150,370),"qty":(370,410),"bin":(410,475),
            "source":(475,545),"due":(545,599),"action":(599,710),"notes":(710,9999)}
 
@@ -295,7 +295,7 @@ def parse_bc_lines_xlsx(path):
             "src": str(g("Source Document") or "").strip(),
         })
     if not rows: return "unknown", "", os.path.basename(path), [], ["no Take lines"]
-    hdr_no = primary_order(rows, "")          # tytul dokumentu = glowne SO
+    hdr_no = primary_order(rows, "")          # document title = primary SO
     return "pick", hdr_no, os.path.basename(path), rows, warns
 
 def parse_document(path):
@@ -372,7 +372,7 @@ def _norm_sku(s):
         if all(len(p) <= 3 and p.isalpha() for p in parts[1:]):
             s = parts[0]                                   # 'X EU' -> 'X'
         else:
-            s = "".join(parts)                             # inne spacje: sklej
+            s = "".join(parts)                             # other spaces: join
     return s
 
 def sku_match(code, sku):
@@ -385,14 +385,14 @@ def sku_match(code, sku):
        bo cyfrowa przestrzen jest gesta i fuzzy moglby zaliczyc INNY istniejacy item."""
     c, s = _norm_sku(code), _norm_sku(sku)
     if not c or not s: return False
-    if c == s: return True                                          # dokladne (kazdy format)
-    if not any(ch.isalpha() for ch in s): return False              # cyfrowy SKU: bez tolerancji
-    if c.endswith("B") and c[:-1] == s: return True                # sufiks B (bulk)
-    if len(c) == len(s) + 1 and c[1:] == s: return True            # dodatkowa litera z przodu
-    if c.endswith("B") and len(c) == len(s) + 2 and c[1:-1] == s: return True   # prefiks + B
+    if c == s: return True                                          # exact (any format)
+    if not any(ch.isalpha() for ch in s): return False              # numeric SKU: no tolerance
+    if c.endswith("B") and c[:-1] == s: return True                # suffix B (bulk)
+    if len(c) == len(s) + 1 and c[1:] == s: return True            # extra leading letter
+    if c.endswith("B") and len(c) == len(s) + 2 and c[1:-1] == s: return True   # prefix + B
     return False
 
-QTY_SPEED_MAX_GAP_MS = 80     # skaner: inter-char zwykle 1-50ms (konfigurowalne); czlowiek sustained <80ms = nierealny
+QTY_SPEED_MAX_GAP_MS = 80     # scanner: inter-char usually 1-50ms (configurable); a human sustaining <80ms is not realistic
 def qty_speed_ok(times_ms):
     """Heurystyka skaner-vs-czlowiek na SPRZETOWYCH timestampach zdarzen (event.time, ms).
        Odporna na lag petli Tk (mierzy czas nacisniecia, nie obslugi). Zwraca (ok, n, max_ms, med_ms).
@@ -402,7 +402,7 @@ def qty_speed_ok(times_ms):
     gaps = []
     for a, b in zip(times_ms, times_ms[1:]):
         d = b - a
-        if d < 0: d += 4294967296          # wrap uint32 (~49.7 dnia uptime)
+        if d < 0: d += 4294967296          # uint32 wrap (~49.7 days of uptime)
         gaps.append(d)
     gaps_s = sorted(gaps)
     med = gaps_s[len(gaps_s)//2]
@@ -416,7 +416,7 @@ def parse_scanned_qty(code):
     c = (code or "").strip()
     m = re.match(r"^Q(?:TY)?\s*[:#x*\-]?\s*(\d+)$", c, re.I)
     if m: return int(m.group(1))
-    if c.isdigit() and len(c) <= 4: return int(c)   # sama liczba (max 4 cyfry - qty pudelka; dluzsze = EAN, nie qty)
+    if c.isdigit() and len(c) <= 4: return int(c)   # bare number (max 4 digits - box qty; longer means EAN, not qty)
     return None
 
 RADIO_PREFIXES = ("MDH", "MDM", "MDR", "DM", "DP", "DGP", "DGM", "DEP", "DEM", "MTP", "MXP")
@@ -425,8 +425,8 @@ def is_radio(sku):
        Lista pokrywa popularne rodziny; pozostale itemy mozna oznaczyc recznie w stacji."""
     return (sku or "").strip().upper().startswith(RADIO_PREFIXES)
 
-# rodziny numerow katalogowych akcesoriow OEM (ladowarki/baterie/kable/audio/anteny...)
-# - skonczone i charakterystyczne; SERIALE radiowe NIGDY tak nie zaczynaja (zaczynaja od cyfr).
+# OEM accessory catalogue number families (chargers/batteries/cables/audio/antennas...)
+# - finite and distinctive; device SERIALS NEVER start this way (they start with digits).
 ACCESSORY_PREFIXES = ("PMPN","PMNN","PMKN","PMLN","PMAD","PMAE","PMMN","PMDN",
                       "NNTN","HKNN","HKVN","HLN","RLN","GLN","WPLN")
 def looks_like_sku(code):
@@ -447,7 +447,7 @@ def valid_serial(code, pick_skus=None):
     if not re.fullmatch(r"[A-Za-z0-9\-]+", c): return False, "invalid characters"
     if not any(ch.isalpha() for ch in c): return False, "no letters (looks like a number/qty)"
     if any(sku_match(c, s) for s in pick_skus): return False, "looks like a SKU, not a serial"
-    if looks_like_sku(c): return False, "looks like a SKU, not a serial"   # czesc Motoroli po prefiksie
+    if looks_like_sku(c): return False, "looks like a SKU, not a serial"   # OEM part after the prefix
     if parse_scanned_qty(c) is not None: return False, "looks like a QTY code"
     return True, ""
 
@@ -467,7 +467,7 @@ def bc_serial_export(serials, pack=1):
     rows = []
     for i in range(0, len(serials), pack):
         group = serials[i:i+pack]
-        rows.append(" ".join(group) + "\tYes\t\tYes\t1\t1")   # SPACJA miedzy serialami w rzedzie
+        rows.append(" ".join(group) + "\tYes\t\tYes\t1\t1")   # SPACE between serials in a row
     return "\n".join(rows)
 
 # ==================================================================== customers
@@ -489,7 +489,7 @@ def load_serial_skus():
 def save_serial_skus(s):
     SERIAL_SKUS_PATH.write_text(json.dumps(sorted(s), ensure_ascii=False), encoding="utf-8")
 
-# ---------- REJESTR ZNANYCH SKU (uczy sie pasywnie z kazdego picka/put-away) ----------
+# ---------- KNOWN SKU REGISTRY (learns passively from every pick/put-away) ----------
 def load_known_skus():
     """Katalog SKU zebranych ze wszystkich przetworzonych dokumentow. Fundament triage:
        kod NIE na picku, ale W rejestrze = prawdziwy zly item; poza rejestrem = szum."""
@@ -577,8 +577,8 @@ def learn_skus(rows):
             KNOWN_SKUS_PATH.write_text(json.dumps(sorted(known | fresh), ensure_ascii=False), encoding="utf-8")
     except Exception: pass
 
-# ---------- PROFIL BULKOW: rejestr "jakie itemy chodza bulkiem i po ile" ----------
-# Deterministyczny i audytowalny (jak known-SKU) - uczy sie z pickow ORAZ sesji serialowych.
+# ---------- BULK PROFILE: registry of "which items move in bulk and in what size" ----------
+# Deterministic and auditable (like known-SKU) - learns from picks AND serial sessions.
 def load_bulk_profile():
     if BULK_PROFILE_PATH.exists():
         try: return json.loads(BULK_PROFILE_PATH.read_text(encoding="utf-8"))
@@ -611,10 +611,10 @@ def classify_scan(code, pick_skus=None, known=None):
     c = (code or "").strip()
     if not c: return "unknown"
     known = load_known_skus() if known is None else known
-    if any(sku_match(c, s) for s in known): return "sku"     # REJESTR ABSOLUTNIE PIERWSZY:
-    # (bo parse_scanned_qty lapie teraz same cyfry - cyfrowe SKU dostawcy musza byc bledem, nie qty-szumem)
+    if any(sku_match(c, s) for s in known): return "sku"     # REGISTRY STRICTLY FIRST:
+    # (parse_scanned_qty now catches bare digits, so numeric supplier SKUs must be errors, not qty noise)
     if parse_scanned_qty(c) is not None: return "qty"
-    if looks_like_sku(c): return "sku"     # STRUKTURA: czesc Motoroli spoza rejestru = tez PRAWDZIWY blad
+    if looks_like_sku(c): return "sku"     # STRUCTURE: an OEM part outside the registry is a REAL error too
     if c.isdigit(): return "numeric"
     okv, _ = valid_serial(c, pick_skus or [])
     if okv: return "serial"
@@ -636,8 +636,8 @@ def export_star_schema(out_dir):
     from datetime import datetime as _dt
     tele = [e for e in load_events() if e.get("type") == "PICK_TELEMETRY" and e.get("lines")]
     if not tele: return [], 0
-    facts = []       # ziarno: linia picka
-    dim_pick = {}    # pick_id -> atrybuty naglowka
+    facts = []       # grain: one pick line
+    dim_pick = {}    # pick_id -> header attributes
     for pid, ev in enumerate(tele, 1):
         ts = ev.get("ts", ""); day = ts[:10]
         pick_id = f"P{pid:05d}"
@@ -654,26 +654,26 @@ def export_star_schema(out_dir):
                 "sku": sku, "zone": zone, "bin": binv,
                 "qty": int(ln.get("qty", 1)), "seq": li, "t_offset_s": ln.get("t", 0),
             })
-    # wymiar item: agregaty velocity (fundament ABC)
+    # item dimension: velocity aggregates (the ABC foundation)
     it = {}
     for f in facts:
         d = it.setdefault(f["sku"], {"sku": f["sku"], "picks": 0, "units": 0, "zones": {}})
         d["picks"] += 1; d["units"] += f["qty"]; d["zones"][f["zone"]] = d["zones"].get(f["zone"],0)+1
     ranked = sorted(it.values(), key=lambda d: -d["units"])
     cum = 0; tot = sum(d["units"] for d in ranked) or 1
-    for d in ranked:                                  # klasyfikacja ABC wg skumulowanego udzialu (Pareto)
+    for d in ranked:                                  # ABC classification by cumulative share (Pareto)
         cum += d["units"]; share = cum / tot
         d["abc"] = "A" if share <= 0.8 else ("B" if share <= 0.95 else "C")
         d["home_zone"] = max(d["zones"], key=d["zones"].get) if d["zones"] else "?"
     dim_item = [{"sku": d["sku"], "home_zone": d["home_zone"], "picks": d["picks"],
                  "units": d["units"], "abc_class": d["abc"]} for d in ranked]
-    # wymiar zone
+    # zone dimension
     zt = {}
     for f in facts:
         z = zt.setdefault(f["zone"], {"zone": f["zone"], "lines": 0, "units": 0})
         z["lines"] += 1; z["units"] += f["qty"]
     dim_zone = sorted(zt.values(), key=lambda z: -z["lines"])
-    # wymiar date
+    # date dimension
     dts = {}
     for f in facts:
         try: dd = _dt.strptime(f["date"], "%Y-%m-%d")
@@ -697,7 +697,7 @@ def export_star_schema(out_dir):
         _w("dim_pick.csv", list(dim_pick.values()),
            ["pick_id","doc","order","ts","date","n_lines","units","cycle_s","validation_s","queued"]),
     ]
-    # README z modelem + gotowym SQL (dowod 'zaprojektowalem hurtownie')
+    # README with the model plus ready SQL (evidence of a designed warehouse schema)
     readme = (
         "PICKCORE — STAR SCHEMA EXPORT (warehouse slotting analytics)\n"
         "="*60 + "\n\n"
@@ -724,8 +724,8 @@ def export_star_schema(out_dir):
     Path(rp).write_text(readme, encoding="utf-8"); paths.append(rp)
     return paths, len(facts)
 
-# ---------------- PICKMAP HEAT (integracja z pickmap_template.html autora) ----------------
-# szablon rack-view (autora) wbudowany w exe - zlib+base64; zewnetrzny plik ma priorytet
+# ---------------- PICKMAP HEAT (integration with pickmap_template.html) ----------------
+# rack-view template embedded in the exe as zlib+base64; an external file takes priority
 PICKMAP_TPL_B64 = (
 "eNrVPe1y28iR//0Us/DeFRkTNAF+maSkhBIJaHPr2BU7SWV1qjNIDkXEFMAAoGSF0XPd/3uy6+7Bx0yTopS9TVXOLkloTHdP"
 "T09Pd88MMDj5bvLh4vOfP07FKrtdn706wT9iHUQ3p5aMLLwhgwX8uZVZIOarIElldmpts6X9zipuR8GtPLXuQnm/iZPMEvM4"
@@ -850,7 +850,7 @@ def _embedded_template():
     import zlib as _z, base64 as _b
     return _z.decompress(_b.b64decode(PICKMAP_TPL_B64)).decode("utf-8")
 
-PICKMAP_LOC = re.compile(r"^\d{2}-[A-Z]\d{2}-[A-Z]\d$")   # gramatyka ZZ-RPP-LS (zgodna z data-loc szablonu)
+PICKMAP_LOC = re.compile(r"^\d{2}-[A-Z]\d{2}-[A-Z]\d$")   # ZZ-RPP-LS grammar (matches the template data-loc)
 
 def pickmap_heat_data():
     """Agreguje telemetrie do {dokladna_lokacja: liczba_WIZYT} - dokladnie to,
@@ -859,7 +859,7 @@ def pickmap_heat_data():
     from collections import Counter
     heat, unmapped = Counter(), Counter()
     for ev in load_telemetry():
-        seen = set()                                   # WIZYTY: 1 pick x 1 lokacja = 1 (niezaleznie od trybu skanowania i qty)
+        seen = set()                                   # VISITS: one pick times one location counts as one, regardless of scan mode and qty
         for ln in ev.get("lines") or []:
             b = (ln.get("bin") or "").strip().upper()
             if b: seen.add(b)
@@ -869,11 +869,11 @@ def pickmap_heat_data():
     return heat, unmapped
 
 # ================= KIT LABELS (natywny port Label Selector HG v11.1) =================
-# Odzyskane z v11: wymiary/DPI hardcoded, DESC_MAP, generator ZPL z truncation-flaga,
-# walidacja copies, audit CSV, druk RAW. Poprawki: (1) zrodlo kitow = grupowanie
+# Recovered from v11: hardcoded dimensions/DPI, DESC_MAP, ZPL generator with a truncation flag,
+# copies validation, audit CSV, RAW printing. Fixes: (1) kit source is order-level grouping
 # orderowe PickCore (nie kruchy parser sasiedztwa), (2) log w Logi\, (3) drukarka w cfg.
 LABEL_W_MM, LABEL_H_MM, LABEL_DPI = 40, 30, 203
-_DPMM = 8                                   # 203dpi ~ 8 dots/mm (GK420d)
+_DPMM = 8                                   # 203dpi is about 8 dots/mm (GK420d)
 LABEL_PW, LABEL_LL = LABEL_W_MM*_DPMM, LABEL_H_MM*_DPMM      # 320 x 240
 FONT_HEADER, FONT_ITEM = 26, 20
 HEADER_Y, ITEM_ROW_H, LABEL_BOTTOM_PAD = 56, 26, 8
@@ -1043,16 +1043,16 @@ def generate_shipment_zpl(kit_id, items, w_mm, h_mm, dpi, copies):
         z.append(f"^FO135,{y}^A0N,18,18^FD- {it['desc']}^FS")
         y += 26; shown += 1
     if shown < total:
-        if y > (ll - 20) and shown:       # brak miejsca na marker - poswiec ostatnia linie
+        if y > (ll - 20) and shown:       # no room for the marker - sacrifice the last line
             z = z[:-2]; shown -= 1; y -= 26
         z.append(f"^FO20,{y}^A0N,16,16^FD+{total-shown} more^FS")
     z.append(f"^PQ{int(copies)}"); z.append("^XZ")
     return "\n".join(z), shown, total
 
 
-# ================= FORWARDER (shipment -> payload dla portalu spedytora) =================
-# Warstwa przeniesiona z narzedzia testowego Forwarder Prep 0.1 po potwierdzeniu na produkcji.
-# Parser rozpoznaje linie adresu PO CHARAKTERZE - blok "Delivery Address" nie ma stalej struktury.
+# ================= FORWARDER (shipment -> payload for the forwarder portal) =================
+# Layer carried over from the Forwarder Prep 0.1 test tool after it proved out in production.
+# The parser identifies address lines BY CHARACTER - the "Delivery Address" block has no fixed structure.
 PARCEL_PRESETS = [
     ("XS  20x15x10", 20, 15, 10),
     ("S   30x20x15", 30, 20, 15),
@@ -1062,8 +1062,8 @@ PARCEL_PRESETS = [
     ("Pallet 120x80x100", 120, 80, 100),
 ]
 
-# Wzorce kodow pocztowych - ile TOKENOW z linii nalezy do kodu, a ile do miasta.
-# Bez tego "3542 AW Utrecht" dawalo kod "3542" i miasto "AW Utrecht" -> error_postal_code_format.
+# Postcode patterns - how many TOKENS of the line belong to the code and how many to the city.
+# Without this "3542 AW Utrecht" yielded code "3542" and city "AW Utrecht" -> error_postal_code_format.
 POSTCODE_RULES = [
     ("Netherlands",    r"^\d{4}\s*[A-Za-z]{2}$",                    2),
     ("United Kingdom", r"^[A-Za-z]{1,2}\d[A-Za-z\d]?\s*\d[A-Za-z]{2}$", 2),
@@ -1084,12 +1084,12 @@ def split_postcode(line, country=""):
             cand = " ".join(toks[:take])
             if re.match(rx, cand):
                 return cand, " ".join(toks[take:]).strip()
-    # ogolnie: "1234 AB Miasto" - cyfry + krotki blok liter to nadal kod pocztowy
+    # general case: "1234 AB City" - digits plus a short letter block is still a postcode
     if len(toks) >= 2 and re.match(r"^\d{3,5}$", toks[0]) and re.match(r"^[A-Za-z]{2}$", toks[1]):
         return f"{toks[0]} {toks[1]}", " ".join(toks[2:]).strip()
     return toks[0], " ".join(toks[1:]).strip()
 
-# Kraj z dokumentu -> nazwa w liscie Forwarder (rozszerzaj wg potrzeb)
+# Country from the document -> name in the forwarder list (extend as needed)
 COUNTRY_FIX = {"UK": "United Kingdom", "GB": "United Kingdom", "NL": "Netherlands",
                "DE": "Germany", "SE": "Sweden", "FR": "France", "BE": "Belgium"}
 
@@ -1104,17 +1104,17 @@ COUNTRIES = {
     "portugal": "Portugal", "italy": "Italy", "spain": "Spain", "austria": "Austria", "switzerland": "Switzerland",
 }
 
-# Numery rejestrowe / podatkowe potrafia siedziec w srodku bloku adresowego - to NIE adres
+# Registration and tax numbers can sit inside the address block - they are NOT address lines
 REG_RX = re.compile(r"^(kvk|btw|vat|coc|reg|tax|ust|org)[\s.:\-]?\w*\d"
-                    r"|^[A-Za-z]{2}\d{8,12}[A-Za-z]?\d{0,2}$"     # VAT z prefiksem kraju: PL1234567890, NL123456789B01
+                    r"|^[A-Za-z]{2}\d{8,12}[A-Za-z]?\d{0,2}$"     # VAT with a country prefix: PL1234567890, NL123456789B01
                     r"|^kvk\d+$", re.I)
 
-# Wzorce kodow pocztowych do WYKRYCIA linii (niezaleznie od kraju)
+# Postcode patterns used to DETECT the line (country independent)
 PC_DETECT = [
     (r"^\d{4}\s*[A-Za-z]{2}\b", "Netherlands"),
     (r"^[A-Za-z]{1,2}\d[A-Za-z\d]?\s+\d[A-Za-z]{2}\b", "United Kingdom"),
     (r"^\d{3}\s\d{2}\b", "Sweden"),
-    (r"^\d{5}\b", ""),          # DE / SE bez spacji / FR - kraju nie zgadujemy
+    (r"^\d{5}\b", ""),          # DE / SE without a space / FR - the country is never guessed
     (r"^\d{2}-\d{3}\b", "Poland"),
     (r"^\d{4}-\d{3}\b", "Portugal"),
 ]
@@ -1124,7 +1124,7 @@ def _looks_like_person(line):
     """Osoba kontaktowa vs dzielnica/dodatkowa linia adresu. Nazwiska w tych dokumentach
        maja 2-3 czlony pisane wielka litera ("Edwin Venema", "Daniel Kantor Kanon"),
        a dzielnice sa jednoczlonowe ("Carnide"). Pozycja wzgledem ulicy nie wystarcza."""
-    # Czlony nazwisk typu "de", "van", "von", "da" pisze sie mala litera - to nadal osoba
+    # Name particles such as "de", "van", "von", "da" are lowercase - still a person
     PARTICLES = {"de", "van", "der", "den", "von", "la", "le", "du", "di", "da", "dos", "el", "ter"}
     t = (line or "").split()
     if not (2 <= len(t) <= 4):
@@ -1148,26 +1148,26 @@ def classify_address(lines):
     if not ln:
         return out
 
-    # 1) kraj jako osobna linia
+    # 1) country on its own line
     for i, l in enumerate(ln):
         if l.lower().strip(",. ") in COUNTRIES:
             out["country"] = COUNTRIES[l.lower().strip(",. ")]
             ln.pop(i); break
 
-    # 2) linia z kodem pocztowym
+    # 2) line carrying the postcode
     for i, l in enumerate(ln):
         hit = False
         for rx, guess in PC_DETECT:
             if re.match(rx, l):
                 out["postcode"], out["city"] = split_postcode(l, out["country"] or guess)
                 if not out["country"] and guess:
-                    out["country"] = guess       # kraj z formatu kodu, gdy dokument go pomija
+                    out["country"] = guess       # country inferred from the code format when the document omits it
                 ln.pop(i); hit = True; break
         if hit:
             break
 
-    # 3) numery rejestrowe/podatkowe: KVK/VAT/BTW oraz linie zlozone WYLACZNIE z cyfr
-    #    (portugalskie NIF, holenderskie KVK) - to nie jest czesc adresu
+    # 3) registration/tax numbers: KVK/VAT/BTW and lines made up ONLY of digits
+    #    (Portuguese NIF, Dutch KVK) - not part of the address
     ln = [l for l in ln
           if not REG_RX.match(l.replace(" ", ""))
           and not re.fullmatch(r"[\d\s.\-]{6,}", l)]
@@ -1176,7 +1176,7 @@ def classify_address(lines):
         return out
     out["company"] = ln.pop(0)
 
-    # 4) ulica: ostatnia pozostala linia zawierajaca cyfre (numer domu)
+    # 4) street: the last remaining line containing a digit (house number)
     street_idx = None
     for i, l in enumerate(ln):
         if re.search(r"\d", l):
@@ -1187,7 +1187,7 @@ def classify_address(lines):
     else:
         before, after = ln, []
 
-    # 5) przed ulica = osoba kontaktowa, po ulicy = dzielnica / dodatkowe linie adresu
+    # 5) before the street = contact person, after it = district or extra address lines
     rest = list(before) + list(after)
     person = next((l for l in rest if _looks_like_person(l)), "")
     if person:
@@ -1241,10 +1241,10 @@ def parse_shipment(path):
 
     out = {"file": os.path.basename(path)}
 
-    # --- referencje: POZYCYJNIE, nie z tekstu liniowego ---
-    # W tekscie liniowym prawa kolumna (Shipment No, Sales Order No.) przeplata sie
-    # z blokiem adresu, wiec regexy po \n lapaly wartosci z sasiedniej kolumny.
-    # Bierzemy slowo lezace BEZPOSREDNIO PONIZEJ etykiety, w tym samym pasie X.
+    # --- references: taken POSITIONALLY, not from linear text ---
+    # In linear text the right column (Shipment No, Sales Order No.) interleaves
+    # with the address block, so newline regexes picked up values from the neighbouring column.
+    # Take the word sitting DIRECTLY BELOW the label, within the same X band.
     def value_below(*label_tokens, ymax=26):
         return _value_below(words, page.width, list(label_tokens), ymax)
 
@@ -1253,11 +1253,11 @@ def parse_shipment(path):
     out["your_order"]  = value_below("Your", "Order", "No")
     out["account"]     = value_below("Customer", "Account", "No.")
     out["date"]        = value_below("Date")
-    # Telefon nadawcy z naglowka - portal odrzuca wypelniacz "00000000" jako niepoprawny numer,
-    # a numer nadawcy jest prawidlowy i sensowny: przy problemie kurier dzwoni do nas.
+    # Sender phone from the header - the portal rejects the "00000000" filler as an invalid number,
+    # and the sender number is valid and sensible: on a problem the courier calls us.
     mt = re.search(r"T:\s*(\+\d[\d()\s\-]{6,}\d)", text)
     if mt:
-        _ph = re.sub(r"\(\s*0\s*\)", "", mt.group(1))          # "(0)" to zapis krajowy, w formacie miedzynarodowym zbedny
+        _ph = re.sub(r"\(\s*0\s*\)", "", mt.group(1))          # "(0)" is domestic notation, redundant in the international format
         out["sender_phone"] = re.sub(r"\s{2,}", " ", _ph.replace("(", "").replace(")", "")).strip()
     else:
         out["sender_phone"] = ""
@@ -1265,7 +1265,7 @@ def parse_shipment(path):
     m = re.search(r"Dispatch date:\s*([0-9]{1,2}-[A-Za-z]{3}-[0-9]{4})", text)
     out["dispatch"] = m.group(1) if m else ""
 
-    # --- blok adresu: lewa kolumna miedzy "Delivery Address" a "Customer Account No." ---
+    # --- address block: left column between "Delivery Address" and "Customer Account No." ---
     top = first_top("Delivery")
     bot = first_top("Customer")
     addr = []
@@ -1279,7 +1279,7 @@ def parse_shipment(path):
     out["address_raw"] = addr
     out.update(classify_address(addr))
 
-    # --- pozycje ---
+    # --- line items ---
     items = []
     started = False
     for ln in text.splitlines():
@@ -1292,7 +1292,7 @@ def parse_shipment(path):
         if m:
             qty = int(m.group(1)) if m.group(1) else 1
             items.append({"qty": qty, "sku": m.group(2), "desc": m.group(3).strip()})
-    # linie oplat transportowych nie sa towarem
+    # freight charge lines are not goods
     out["items"] = [i for i in items if not re.match(r"^DEL[\s\-]", i["sku"])]
     out["all_items"] = items
     return out
@@ -1311,10 +1311,10 @@ def _cap(value, key):
 
 def build_payload(data, ui):
     """Ladunek dla bookmarkletu. Klucze = pola formularza Forwarder."""
-    # Uzgodnione z operatorem: przez Forwarder ida wylacznie paczki z radiotelefonami,
-    # wiec opis paczki jest STALY (portal wymaga angielskiego opisu handlowego).
+    # Agreed with the operator: only device parcels go through the forwarder,
+    # so the parcel description is FIXED (the portal requires an English commercial description).
     desc = ui.get("description") or "Two way radios"
-    # Ustalone z operatorem: Sales Order No. -> Your reference, Your Order No -> Delivery reference
+    # Agreed with the operator: Sales Order No. -> Your reference, Your Order No -> Delivery reference
     ref = ui.get("reference") or data.get("sales_order", "")
     return {
         "your_reference": ref,
@@ -1327,8 +1327,8 @@ def build_payload(data, ui):
         "address3": _cap(data.get("address3", ""), "address3"),
         "postcode": data.get("postcode", ""),
         "city": _cap(data.get("city", ""), "city"),
-        # Portal WALIDUJE format telefonu - "00000000" jest odrzucane. Gdy odbiorca nie ma numeru,
-        # wysylamy numer nadawcy z naglowka dokumentu: jest poprawny i kurier ma do kogo zadzwonic.
+        # The portal VALIDATES the phone format - "00000000" is rejected. When the consignee has no number,
+        # the sender number from the document header is sent: it is valid and the courier has someone to call.
         "telephone": ((ui.get("telephone") or "").strip()
                       or (data.get("sender_phone") or "").strip()
                       or "+31 475252041"),
@@ -1340,14 +1340,14 @@ def build_payload(data, ui):
         "width_cm": ui.get("width") or "0",
         "height_cm": ui.get("height") or "0",
         "value": ui.get("value") or "0",
-        "packing_type": "Box",          # przez Forwarder zawsze paczki
+        "packing_type": "Box",          # always parcels through the forwarder
         "_source": data.get("file", ""),
     }
 
 
 
 
-# ---------- BAZA KLIENTOW (uzupelnianie danych do przesylek) ----------
+# ---------- CUSTOMER FILE (enriches shipment data) ----------
 CUSTOMER_DB = {"by_no": {}, "by_name": {}, "n": 0, "file": ""}
 _CUST_SUFFIX = re.compile(
     r"\b(b\.?v\.?|n\.?v\.?|gmbh|ltd|limited|sarl|sas|s\.?a\.?|srl|s\.?r\.?l\.?|"
@@ -1397,9 +1397,9 @@ def load_customer_db(path):
                    "contact": (r.get(c_ct) or "").strip() if c_ct else "",
                    "phone": (r.get(c_ph) or "").strip() if c_ph else "",
                    "email": (r.get(c_em) or "").strip() if c_em else ""}
-            # UWAGA: "un known" to SWIADOMY wypelniacz - Forwarder wymaga osoby kontaktowej,
-            # wiec przy nieznanym kontakcie wpisujemy go celowo. Normalizujemy tylko pisownie.
-            # Ignorujemy natomiast "-" i puste warianty, ktore niczego nie wnosza.
+            # NOTE: "un known" is a DELIBERATE filler - the forwarder requires a contact person,
+            # so it is entered on purpose when the contact is unknown. Only the spelling is normalised.
+            # The "-" and empty variants are ignored, since they add nothing.
             for k in ("contact", "phone", "email"):
                 _v = rec[k].strip()
                 if _v in ("-", "--", "n/a", "N/A", "brak"):
@@ -1408,7 +1408,7 @@ def load_customer_db(path):
                 rec["contact"] = "Unknown"
             by_no[no] = rec
             key = _cust_key(nm)
-            if key and key not in by_name:      # pierwsze wystapienie wygrywa
+            if key and key not in by_name:      # first occurrence wins
                 by_name[key] = rec
         CUSTOMER_DB.update(by_no=by_no, by_name=by_name, n=len(by_no), file=path)
         return len(by_no), f"{len(by_no)} customers loaded"
@@ -1424,7 +1424,7 @@ def match_customer(account="", name=""):
     if key:
         rec = CUSTOMER_DB["by_name"].get(key)
         if rec: return rec, "name"
-        for k, r in CUSTOMER_DB["by_name"].items():   # dokument bywa obciety
+        for k, r in CUSTOMER_DB["by_name"].items():   # the document is sometimes truncated
             if key and (k.startswith(key) or key.startswith(k)) and min(len(k), len(key)) >= 6:
                 return r, "name~"
     return None, ""
@@ -1444,13 +1444,13 @@ def enrich_from_customers(data):
     doc_addr = re.sub(r"[^a-z0-9]", "", (data.get("address1", "") + data.get("city", "")).lower())
     db_addr = re.sub(r"[^a-z0-9]", "", (rec.get("address", "") + rec.get("city", "")).lower())
     if doc_addr and db_addr and doc_addr != db_addr:
-        out["match"]["address_differs"] = True     # dropshipment albo inny adres dostawy
+        out["match"]["address_differs"] = True     # dropshipment or a different delivery address
     return out
 
 
-# ---------- INSTALACJA ZAKLADKI W PRZEGLADARCE ----------
-# Bookmarklet jest zakodowany procentowo i NIE zawiera cudzyslowow, wiec mozna go wstawic
-# w atrybut href="..." bez dalszego escapowania. Apostrofy sa w atrybucie nieszkodliwe.
+# ---------- BROWSER BOOKMARK INSTALLATION ----------
+# The bookmarklet is percent-encoded and contains NO double quotes, so it can be placed
+# in an href="..." attribute without further escaping. Apostrophes are harmless there.
 FORWARDER_BOOKMARKLET = r"""javascript:(async%20function%20()%20%7B%20let%20raw%3B%20try%20%7B%20raw%20%3D%20await%20navigator.clipboard.readText()%3B%20%7D%20catch%20(e)%20%7B%20alert(%22Nie%20moge%20odczytac%20schowka.%5CnKliknij%20raz%20w%20tlo%20strony%20i%20sprobuj%20ponownie.%22)%3B%20return%3B%20%7D%20let%20d%3B%20try%20%7B%20d%20%3D%20JSON.parse(raw)%3B%20%7D%20catch%20(e)%20%7B%20alert(%22W%20schowku%20nie%20ma%20danych%20przesylki%20(JSON).%5CnSkopiuj%20payload%20z%20Forwarder%20Prep.%22)%3B%20return%3B%20%7D%20const%20MAP_MAIN%20%3D%20%5B%20%5B%22your_reference%22%2C%20%5B%22your%20reference%22%5D%5D%2C%20%5B%22delivery_reference%22%2C%20%5B%22delivery%20reference%22%5D%5D%2C%20%5B%22company_name%22%2C%20%5B%22company%20name%22%5D%5D%2C%20%5B%22contact_name%22%2C%20%5B%22contact%20name%22%5D%5D%2C%20%5B%22address1%22%2C%20%5B%22address%20line%201%22%2C%20%22street%20name%22%5D%5D%2C%20%5B%22address2%22%2C%20%5B%22address%20line%202%22%5D%5D%2C%20%5B%22address3%22%2C%20%5B%22address%20line%203%22%5D%5D%2C%20%5B%22postcode%22%2C%20%5B%22postal%20code%22%2C%20%22postcode%22%2C%20%229999%20aa%22%5D%5D%2C%20%5B%22city%22%2C%20%5B%22town%22%2C%20%22city%22%5D%5D%2C%20%5B%22telephone%22%2C%20%5B%22telephone%22%2C%20%22phone%22%5D%5D%2C%20%5B%22email%22%2C%20%5B%22email%22%5D%5D%20%5D%3B%20const%20MAP_PARCEL%20%3D%20%5B%20%5B%22description%22%2C%20%5B%22parcel%20description%22%5D%5D%2C%20%5B%22weight_kg%22%2C%20%5B%22parcel%20weight%22%5D%5D%2C%20%5B%22length_cm%22%2C%20%5B%22parcel%20length%22%5D%5D%2C%20%5B%22width_cm%22%2C%20%5B%22parcel%20width%22%5D%5D%2C%20%5B%22height_cm%22%2C%20%5B%22parcel%20height%22%5D%5D%2C%20%5B%22value%22%2C%20%5B%22value%22%5D%5D%20%5D%3B%20const%20norm%20%3D%20(s)%20%3D%3E%20(s%20%7C%7C%20%22%22).toLowerCase().replace(%2F%5Cs%2B%2Fg%2C%20%22%20%22).trim()%3B%20function%20scan()%20%7B%20return%20%5B...document.querySelectorAll(%22input%2C%20select%2C%20textarea%22)%5D%20.filter((e)%20%3D%3E%20e.type%20!%3D%3D%20%22hidden%22%20%26%26%20!e.disabled%20%26%26%20e.offsetParent%20!%3D%3D%20null)%20.map((e)%20%3D%3E%20%7B%20let%20lab%20%3D%20%22%22%3B%20if%20(e.labels%20%26%26%20e.labels%5B0%5D)%20lab%20%3D%20e.labels%5B0%5D.innerText%3B%20if%20(!lab)%20%7B%20const%20cell%20%3D%20e.closest(%22td%2C%20div%2C%20tr%22)%3B%20if%20(cell)%20%7B%20const%20prev%20%3D%20cell.previousElementSibling%3B%20if%20(prev)%20lab%20%3D%20prev.innerText%3B%20%7D%20%7D%20return%20%7B%20el%3A%20e%2C%20txt%3A%20norm(%5Blab%2C%20e.name%2C%20e.id%2C%20e.placeholder%5D.join(%22%20%22))%20%7D%3B%20%7D)%3B%20%7D%20const%20findIn%20%3D%20(list%2C%20frags)%20%3D%3E%20%7B%20for%20(const%20f%20of%20frags)%20%7B%20const%20hit%20%3D%20list.find((x)%20%3D%3E%20x.txt.includes(f)%20%26%26%20!x.el.dataset.fwFilled)%3B%20if%20(hit)%20return%20hit%3B%20%7D%20return%20null%3B%20%7D%3B%20const%20sleep%20%3D%20(ms)%20%3D%3E%20new%20Promise((r)%20%3D%3E%20setTimeout(r%2C%20ms))%3B%20const%20setValue%20%3D%20(el%2C%20val)%20%3D%3E%20%7B%20const%20v%20%3D%20String(val%20%3D%3D%20null%20%3F%20%22%22%20%3A%20val)%3B%20if%20(el.tagName%20%3D%3D%3D%20%22SELECT%22)%20%7B%20if%20(!el.options%20%7C%7C%20!el.options.length)%20return%20false%3B%20const%20opt%20%3D%20%5B...el.options%5D.find(%20(o)%20%3D%3E%20norm(o.text)%20%3D%3D%3D%20norm(v)%20%7C%7C%20norm(o.value)%20%3D%3D%3D%20norm(v)%20)%20%7C%7C%20%5B...el.options%5D.find((o)%20%3D%3E%20norm(o.text).startsWith(norm(v)))%3B%20if%20(!opt)%20return%20false%3B%20el.value%20%3D%20opt.value%3B%20%7D%20else%20%7B%20el.focus()%3B%20el.value%20%3D%20v%3B%20%7D%20el.dispatchEvent(new%20Event(%22input%22%2C%20%7B%20bubbles%3A%20true%20%7D))%3B%20el.dispatchEvent(new%20Event(%22change%22%2C%20%7B%20bubbles%3A%20true%20%7D))%3B%20el.dispatchEvent(new%20Event(%22blur%22%2C%20%7B%20bubbles%3A%20true%20%7D))%3B%20el.style.outline%20%3D%20%222px%20solid%20%2327c66d%22%3B%20el.dataset.fwFilled%20%3D%20%221%22%3B%20return%20true%3B%20%7D%3B%20function%20tickCheckbox(labelFrag)%20%7B%20const%20box%20%3D%20%5B...document.querySelectorAll('input%5Btype%3D%22checkbox%22%5D')%5D.find((e)%20%3D%3E%20%7B%20let%20lab%20%3D%20e.labels%20%26%26%20e.labels%5B0%5D%20%3F%20e.labels%5B0%5D.innerText%20%3A%20%22%22%3B%20if%20(!lab)%20%7B%20const%20par%20%3D%20e.closest(%22td%2C%20div%2C%20label%2C%20tr%22)%3B%20lab%20%3D%20par%20%3F%20par.innerText%20%3A%20%22%22%3B%20%7D%20return%20norm(%5Blab%2C%20e.name%2C%20e.id%5D.join(%22%20%22)).includes(labelFrag)%3B%20%7D)%3B%20if%20(!box)%20return%20false%3B%20if%20(!box.checked)%20box.click()%3B%20box.style.outline%20%3D%20%222px%20solid%20%2327c66d%22%3B%20return%20box.checked%3B%20%7D%20function%20setCountry(want)%20%7B%20const%20w%20%3D%20norm(want)%3B%20if%20(!w)%20return%20false%3B%20const%20sels%20%3D%20%5B...document.querySelectorAll(%22select%22)%5D%3B%20for%20(const%20sel%20of%20sels)%20%7B%20if%20(!sel.options%20%7C%7C%20!sel.options.length)%20continue%3B%20const%20opt%20%3D%20%5B...sel.options%5D.find((o)%20%3D%3E%20norm(o.text)%20%3D%3D%3D%20w%20%7C%7C%20norm(o.value)%20%3D%3D%3D%20w)%3B%20if%20(!opt)%20continue%3B%20if%20(norm(sel.value)%20%3D%3D%3D%20norm(opt.value))%20%7B%20sel.style.outline%20%3D%20%222px%20solid%20%2327c66d%22%3B%20return%20true%3B%20%7D%20sel.value%20%3D%20opt.value%3B%20sel.dispatchEvent(new%20Event(%22input%22%2C%20%7B%20bubbles%3A%20true%20%7D))%3B%20sel.dispatchEvent(new%20Event(%22change%22%2C%20%7B%20bubbles%3A%20true%20%7D))%3B%20try%20%7B%20if%20(window.jQuery)%20window.jQuery(sel).trigger(%22change%22)%3B%20%7D%20catch%20(e)%20%7B%7D%20sel.style.outline%20%3D%20%222px%20solid%20%2327c66d%22%3B%20return%20true%3B%20%7D%20return%20false%3B%20%7D%20function%20setPackaging(want)%20%7B%20const%20w%20%3D%20norm(want)%3B%20const%20isPack%20%3D%20(t)%20%3D%3E%20t.includes(%22packaging%20type%22)%20%7C%7C%20t.includes(%22packing%20type%22)%3B%20const%20sels%20%3D%20%5B...document.querySelectorAll(%22select%22)%5D.filter((e)%20%3D%3E%20isPack(norm(%5B(e.labels%20%26%26%20e.labels%5B0%5D%20%3F%20e.labels%5B0%5D.innerText%20%3A%20%22%22)%2C%20e.name%2C%20e.id%5D.join(%22%20%22)))%20%7C%7C%20isPack(norm((e.closest(%22td%2C%20div%2C%20tr%22)%20%7C%7C%20%7B%7D).innerText%20%7C%7C%20%22%22)))%3B%20for%20(const%20sel%20of%20sels)%20%7B%20if%20(!sel.options%20%7C%7C%20!sel.options.length)%20continue%3B%20const%20opt%20%3D%20%5B...sel.options%5D.find((o)%20%3D%3E%20norm(o.text)%20%3D%3D%3D%20w%20%7C%7C%20norm(o.value)%20%3D%3D%3D%20w)%3B%20if%20(opt)%20%7B%20sel.value%20%3D%20opt.value%3B%20sel.dispatchEvent(new%20Event(%22input%22%2C%20%7B%20bubbles%3A%20true%20%7D))%3B%20sel.dispatchEvent(new%20Event(%22change%22%2C%20%7B%20bubbles%3A%20true%20%7D))%3B%20try%20%7B%20if%20(window.jQuery)%20window.jQuery(sel).trigger(%22change%22)%3B%20%7D%20catch%20(e)%20%7B%7D%20sel.style.outline%20%3D%20%222px%20solid%20%2327c66d%22%3B%20return%20true%3B%20%7D%20%7D%20const%20trigger%20%3D%20%5B...document.querySelectorAll(%22button%2C%20a%2C%20div%2C%20span%22)%5D%20.find((e)%20%3D%3E%20norm(e.textContent)%20%3D%3D%3D%20%22select%20packaging%20type%22%20%7C%7C%20norm(e.textContent)%20%3D%3D%3D%20%22select%20packing%20type%22)%3B%20if%20(trigger)%20%7B%20trigger.click()%3B%20const%20item%20%3D%20%5B...document.querySelectorAll(%22li%2C%20option%2C%20div%2C%20span%2C%20a%22)%5D%20.find((e)%20%3D%3E%20norm(e.textContent)%20%3D%3D%3D%20w%20%26%26%20e.offsetParent%20!%3D%3D%20null)%3B%20if%20(item)%20%7B%20item.click()%3B%20return%20true%3B%20%7D%20%7D%20return%20false%3B%20%7D%20const%20filled%20%3D%20%5B%5D%2C%20missed%20%3D%20%5B%5D%3B%20const%20applied%20%3D%20%5B%5D%3B%20function%20fillGroup(map%2C%20list)%20%7B%20for%20(const%20%5Bkey%2C%20frags%5D%20of%20map)%20%7B%20const%20val%20%3D%20d%5Bkey%5D%3B%20if%20(val%20%3D%3D%3D%20undefined%20%7C%7C%20val%20%3D%3D%3D%20%22%22%20%7C%7C%20val%20%3D%3D%3D%20null)%20continue%3B%20const%20f%20%3D%20findIn(list%2C%20frags)%3B%20if%20(f%20%26%26%20setValue(f.el%2C%20val))%20%7B%20filled.push(key)%3B%20applied.push(%7B%20el%3A%20f.el%2C%20key%3A%20key%2C%20val%3A%20String(val)%20%7D)%3B%20%7D%20else%20%7B%20missed.push(key)%3B%20%7D%20%7D%20%7D%20if%20(d.country)%20%7B%20if%20(setCountry(d.country))%20%7B%20filled.push(%22country%22)%3B%20await%20sleep(800)%3B%20%7D%20else%20missed.push(%22country%22)%3B%20%7D%20fillGroup(MAP_MAIN%2C%20scan())%3B%20if%20(d.parcels%20!%3D%3D%20undefined%20%26%26%20d.parcels%20!%3D%3D%20%22%22%20%26%26%20String(d.parcels)%20!%3D%3D%20%221%22)%20%7B%20const%20pf%20%3D%20findIn(scan()%2C%20%5B%22number%20of%20parcels%22%5D)%3B%20if%20(pf)%20%7B%20setValue(pf.el%2C%20d.parcels)%3B%20filled.push(%22parcels%22)%3B%20await%20sleep(700)%3B%20%7D%20else%20%7B%20missed.push(%22parcels%22)%3B%20%7D%20%7D%20fillGroup(MAP_PARCEL%2C%20scan())%3B%20if%20(tickCheckbox(%22ready%20now%22))%20filled.push(%22ready_now%22)%3B%20else%20missed.push(%22ready_now%22)%3B%20if%20(setPackaging(d.packing_type%20%7C%7C%20%22Box%22))%20filled.push(%22packing_type%22)%3B%20else%20missed.push(%22packing_type%22)%3B%20await%20sleep(600)%3B%20let%20repaired%20%3D%200%3B%20for%20(const%20a%20of%20applied)%20%7B%20try%20%7B%20if%20(a.el.isConnected%20%26%26%20String(a.el.value%20%7C%7C%20%22%22)%20!%3D%3D%20a.val%20%26%26%20a.el.tagName%20!%3D%3D%20%22SELECT%22)%20%7B%20a.el.dataset.fwFilled%20%3D%20%22%22%3B%20if%20(setValue(a.el%2C%20a.val))%20repaired%2B%2B%3B%20%7D%20%7D%20catch%20(e)%20%7B%20%7D%20%7D%20const%20box%20%3D%20document.createElement(%22div%22)%3B%20box.style.cssText%20%3D%20%22position%3Afixed%3Bright%3A16px%3Bbottom%3A16px%3Bz-index%3A999999%3Bbackground%3A%23161922%3Bcolor%3A%23e9edf2%3B%22%20%2B%20%22font%3A12px%2F1.5%20Segoe%20UI%2CArial%3Bpadding%3A12px%2014px%3Bborder%3A1px%20solid%20%232a2f3a%3Bborder-radius%3A8px%3B%22%20%2B%20%22max-width%3A340px%3Bbox-shadow%3A0%206px%2024px%20rgba(0%2C0%2C0%2C.4)%22%3B%20box.innerHTML%20%3D%20'%3Cb%20style%3D%22color%3A%234d8dff%22%3EFill%20shipment%3C%2Fb%3E%3Cbr%3E'%20%2B%20'%3Cspan%20style%3D%22color%3A%2327c66d%22%3Efilled%3A%20'%20%2B%20filled.length%20%2B%20%22%3C%2Fspan%3E%22%20%2B%20(missed.length%20%3F%20'%3Cbr%3E%3Cspan%20style%3D%22color%3A%23f5b342%22%3Enot%20found%3A%20'%20%2B%20missed.join(%22%2C%20%22)%20%2B%20%22%3C%2Fspan%3E%22%20%3A%20'%3Cbr%3E%3Cspan%20style%3D%22color%3A%238a93a0%22%3Eall%20mapped%20fields%20filled%3C%2Fspan%3E')%20%2B%20(repaired%20%3F%20'%3Cbr%3E%3Cspan%20style%3D%22color%3A%238a93a0%22%3Ere-applied%20after%20form%20refresh%3A%20'%20%2B%20repaired%20%2B%20%22%3C%2Fspan%3E%22%20%3A%20%22%22)%20%2B%20'%3Cbr%3E%3Cspan%20style%3D%22color%3A%235a6675%22%3ECheck%20the%20form%20and%20submit%20manually.%3C%2Fspan%3E'%3B%20document.body.appendChild(box)%3B%20setTimeout(()%20%3D%3E%20box.remove()%2C%209000)%3B%20%7D)()%3B"""
 
 def find_chrome():
@@ -1534,8 +1534,8 @@ button{background:#383026;color:#f2ece1;border:0;border-radius:6px;padding:9px 1
 
 # ================= /FORWARDER =================
 
-# ========== LOCATION INDEX (gdzie ten item juz lezy) ==========
-# Zrodlo #1 (dziala od razu, zero credentiali): wlasna telemetria PA_LINE / RELOC_LINE.
+# ========== LOCATION INDEX (where this item already sits) ==========
+# Source #1 (works immediately, no credentials): own PA_LINE / RELOC_LINE telemetry.
 # Zrodlo #2 (opcjonalne, gdy IT wystawi dostep): adapter BC - patrz bc_bin_contents().
 # Kontrakt: {sku: [{"bin":..., "n":liczba_trafien, "last":ISO, "src":"local|bc"}, ...]} posortowane malejaco.
 

@@ -1,64 +1,74 @@
 # PickCore
 
-Warehouse picking cockpit. Jeden plik Pythona, GUI w Tkinter, zero zaleznosci
-serwerowych. Narzedzie powstalo jako odpowiedz na konkretne waskie gardlo:
-kompletacja zamowien weryfikowana wzrokowo z wydruku, bez kontroli bledow
-i bez zadnych danych o tym, gdzie realnie schodzi czas.
+A warehouse picking cockpit. One Python file, Tkinter GUI, no server-side
+dependencies. The tool answers a specific bottleneck: order picking verified
+by eye against a paper printout, with no error control and no data on where
+the time actually goes.
 
-**Status:** projekt portfolio. Kod jest generyczny, dane wejsciowe syntetyczne,
-zadne nazwy klientow, dostawcow ani danych operacyjnych nie sa czescia repozytorium.
+**Status:** portfolio project. The code is generic, input data is synthetic,
+and no customer, supplier or operational identifiers are part of this
+repository.
 
-## Co robi
+## What it does
 
-| Modul | Funkcja |
+| Module | Function |
 |---|---|
-| Document pipeline | `pdfplumber` parsuje picking liste do struktury, render HTML, druk przez Edge headless |
-| Scan validation | walidacja skanow SKU z tolerancja wariantow i odrzucaniem falszywych trafien |
-| Speed-reject | analiza odstepow miedzyklawiszowych odroznia skaner od reki operatora |
-| Serial capture | wychwytywanie numerow seryjnych w trakcie kompletacji, z undo |
-| Put-away | rejestracja przyjec i relokacji binow |
-| Handheld console | konsola HTTP dla terminala Wi-Fi, allowlista IP i token |
-| Scanner listener | odbior skanow po TCP z terminali DataWedge |
-| Pick heat map | mapa cieplna wizyt w regalach, widok 2D i izometryczny 3D |
-| Star schema export | eksport do modelu gwiazdy pod analitykę slottingu |
-| Label generator | etykiety ZPL na drukarki Zebra, generowane natywnie |
+| Document pipeline | `pdfplumber` parses the picking list into a structure, renders HTML, prints through headless Edge |
+| Scan validation | validates scanned SKUs with variant tolerance and rejection of false matches |
+| Speed-reject | inter-keystroke gap analysis separates scanner input from operator typing |
+| Serial capture | captures serial numbers during picking, with undo |
+| Put-away | records inbound receipts and bin relocations |
+| Handheld console | HTTP console for Wi-Fi terminals, IP allowlist and token |
+| Scanner listener | receives scans over TCP from DataWedge terminals |
+| Pick heat map | heat map of rack visits, 2D elevation and isometric 3D views |
+| Star schema export | exports to a star model for slotting analytics |
+| Label generator | ZPL labels for Zebra printers, generated natively |
 
-## Architektura
+## Architecture
 
-Jeden proces, watki wydzielone dla operacji blokujacych: watcher katalogu,
-render PDF, listener skanera, serwer HTTP. Komunikacja z warstwa GUI wylacznie
-przez kolejki, bo Tkinter nie jest thread safe.
+A single process with worker threads for anything that blocks: directory
+watcher, PDF rendering, scanner listener, HTTP server. All communication with
+the GUI layer goes through queues, because Tkinter is not thread safe.
 
-Zapisy stanu ida zapisem atomowym (temp plus zamiana), po tym jak cicha awaria
-zapisu raz kosztowala kartoteke. Instancja pilnowana mutexem, zeby dwa okna nie
-pisaly po tym samym pliku.
+State is persisted with atomic writes (temp file plus replace), after a silent
+write failure once cost a full customer file. A mutex guards the instance so
+two windows cannot write to the same files.
 
-## Uruchomienie
+## Interface
+
+The navigation rail starts collapsed to icons and expands on click or `Ctrl+B`.
+A context bar above the content area carries the active view name and its
+function key, so a collapsed rail never leaves the operator guessing. Views
+register through a Notebook-compatible API, which keeps the shell replaceable
+without touching any tab content.
+
+## Running it
 
 ```
 pip install pdfplumber pywin32
 python pickcore.py
 ```
 
-Build do exe:
+Building the executable:
 
 ```
 python -m PyInstaller --onedir --windowed --name PickCore ^
     --collect-all pdfplumber --collect-all pdfminer pickcore.py
 ```
 
-Onedir, nie onefile. Onefile rozpakowywal okolo 100 MB do `Temp\_MEIxxxxx`
-przy kazdym starcie, a antywirus trzymal uchwyty przy zamykaniu, co konczylo
-sie bledem usuwania katalogu tymczasowego.
+Onedir, not onefile. Onefile unpacked about 100 MB into `Temp\_MEIxxxxx` on
+every start, and antivirus held handles during shutdown, which ended in a
+failure to remove the temporary directory.
 
-## Bezpieczenstwo
+## Security
 
-Konsola HTTP stoi na LAN, bo terminale lacza sie po Wi-Fi. Dostep zamykaja
-dwie bramki: allowlista IP z dopasowaniem prefiksu (wpis bez ostatniego
-oktetu przepuszcza cala podsiec) oraz token przekazywany raz w URL i dalej
-w cookie. Sekrety integracji nigdy nie trafiaja do configu ani do kodu,
-tylko do zmiennej srodowiskowej albo Windows Credential Manager.
+The HTTP console binds to the LAN because handheld terminals connect over
+Wi-Fi. Access is gated twice: an IP allowlist with prefix matching (an entry
+without the last octet admits a whole subnet) and a token passed once in the
+URL and carried afterwards in a cookie. Integration secrets never reach the
+config file or the source, only an environment variable or Windows Credential
+Manager.
 
-## Licencja
+## License
 
 MIT

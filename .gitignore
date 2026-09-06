@@ -5,6 +5,11 @@ dist/
 *.spec
 _build_step1.py
 _build_step2.py
+_build_step3.py
+_audit_lang.py
+_extract_lang.py
+_lang_raw.txt
+_pl_lines.json
 _shell_new.txt
 build_out.txt
 build_err.txt
