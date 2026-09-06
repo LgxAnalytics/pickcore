@@ -419,19 +419,20 @@ def parse_scanned_qty(code):
     if c.isdigit() and len(c) <= 4: return int(c)   # bare number (max 4 digits - box qty; longer means EAN, not qty)
     return None
 
-RADIO_PREFIXES = ("MDH", "MDM", "MDR", "DM", "DP", "DGP", "DGM", "DEP", "DEM", "MTP", "MXP")
+# Example prefix families. Every catalogue has its own; swap these for yours.
+RADIO_PREFIXES = ("UNA", "UNB", "UNC", "TRX", "TRM", "HRT", "HRP")
 def is_radio(sku):
-    """Radio OEM = znany prefiks modelu (jednostka z numerem seryjnym do BC).
-       Lista pokrywa popularne rodziny; pozostale itemy mozna oznaczyc recznie w stacji."""
+    """A main unit is recognised by a known model prefix (a serialised item).
+       The list covers the common families; anything else can be flagged manually at the station."""
     return (sku or "").strip().upper().startswith(RADIO_PREFIXES)
 
 # OEM accessory catalogue number families (chargers/batteries/cables/audio/antennas...)
 # - finite and distinctive; device SERIALS NEVER start this way (they start with digits).
-ACCESSORY_PREFIXES = ("PMPN","PMNN","PMKN","PMLN","PMAD","PMAE","PMMN","PMDN",
-                      "NNTN","HKNN","HKVN","HLN","RLN","GLN","WPLN")
+ACCESSORY_PREFIXES = ("ACB","ACC","ACD","ACK","ACL","AUD","ANT",
+                      "BAT","CBL","CHG","MNT","PSU","RMT")
 def looks_like_sku(code):
     """Structural recognition of an OEM part BY PREFIX (device or accessory).
-       Domyka luke rozruchowa rejestru: zly item z rodziny katalogowej jest bledem
+       Closes the registry cold-start gap: a wrong item from a catalogue family is an error
        even BEFORE the registry has seen it (for example a near-miss catalogue number one digit apart)."""
     c = _norm_sku(code)
     return c.startswith(RADIO_PREFIXES) or c.startswith(ACCESSORY_PREFIXES)
@@ -439,7 +440,7 @@ def looks_like_sku(code):
 SERIAL_MIN, SERIAL_MAX = 6, 18
 def valid_serial(code, pick_skus=None):
     """Whether a code looks like a valid serial number rather than a SKU, a qty or noise.
-       Zwraca (True,'') albo (False, powod). Lapie: zly format zamiast serialu.
+       Returns (True,'') or (False, reason). Catches a malformed code scanned in place of a serial.
        pick_skus = the SKUs on the pick, used to detect a SKU scanned in place of a serial."""
     c = (code or "").strip(); pick_skus = pick_skus or []
     if len(c) < SERIAL_MIN: return False, f"too short ({len(c)} chars)"
@@ -453,8 +454,8 @@ def valid_serial(code, pick_skus=None):
 
 def bc_serial_line(serial):
     """An Item Tracking Lines row for a SINGLE unit:
-       Serial No <TAB> Availability,Serial=Yes <TAB> Lot No(pusty) <TAB> Availability,Lot=Yes <TAB> Qty(Base)=1 <TAB> Qty to Handle=1.
-       Format potwierdzony realnym eksportem BC."""
+       Serial No <TAB> Availability,Serial=Yes <TAB> Lot No(empty) <TAB> Availability,Lot=Yes <TAB> Qty(Base)=1 <TAB> Qty to Handle=1.
+       Format confirmed against a real ERP export."""
     return f"{serial}\tYes\t\tYes\t1\t1"
 
 def bc_serial_export(serials, pack=1):
@@ -1003,18 +1004,20 @@ def shp_standardize(raw_desc):
     return (raw_desc or "")[:15].strip() + ".."
 
 def parse_shipment_pdf(path):
-    """PDF wysylkowy -> {kit_id: [{sku,desc},...]}  (radia MDH + linie *-ASM).
-       Port parsera v10.2; poprawki: guard pustych stron, zero globali, dedupe per kit."""
+    """Shipment PDF -> {kit_id: [{sku,desc},...]} (main units plus *-ASM lines).
+       Model prefixes come from RADIO_PREFIXES, so a different catalogue needs no code change.
+       Guards against empty pages, keeps no globals, deduplicates per kit."""
     with pdfplumber.open(path) as pdf:
         text = "\n".join((p.extract_text() or "") for p in pdf.pages)
     kits, cur_id, cur_items, seen = {}, None, [], set()
     for line in text.splitlines():
         line = line.strip()
-        if "MDH" in line:
+        _hit = next((p for p in RADIO_PREFIXES if p in line), None)
+        if _hit:
             if cur_id and cur_items: kits[cur_id] = cur_items
-            m = re.search(r"MDH[A-Z0-9]+", line)
+            m = re.search(rf"{_hit}[A-Z0-9]+", line)
             c = re.search(r"([A-Z0-9]{9})$", line)
-            model = m.group() if m else "RADIO"
+            model = m.group() if m else "UNIT"
             cur_id = f"{model}_{c.group(1)}" if c else model
             cur_items, seen = [], set()
             continue
@@ -1617,7 +1620,7 @@ def build_loc_index(max_events=60000):
             if ranked: out[sku] = ranked[:3]
         LOC_INDEX.update(map=out, built=datetime.now().isoformat(timespec="seconds"), n=len(out))
     except Exception as e:
-        # Bez tego indeksu Inbound nie pokazuje ZADNYCH sugestii, a operator widzi
+        # Without this index Inbound shows NO suggestions at all and the operator sees
         # an empty column instead of a message. This exact symptom was reported from the floor.
         note_io_fail("build_loc_index", e)
     return LOC_INDEX
@@ -3184,15 +3187,15 @@ def run_gui():
     _btn_reprint = tk.Button(_btm, text="🖨", command=print_again, bg=UI["panel2"], fg=UI["faint"],
                              relief="flat", font=("Bahnschrift",9), cursor="hand2", width=3)
     _btn_reprint.pack(side="left", padx=4)
-    # Ikona bez etykiety nie wyglada na klikalna, wiec podswietlamy ja pod kursorem.
-    # Tk nie ma natywnych dymkow, a Toplevel-dymek to nowy byt okienkowy do utrzymania -
+    # An unlabelled icon does not read as clickable, so it is highlighted on hover.
+    # Tk has no native tooltips and a Toplevel tooltip is another window object to maintain,
     # not worth a dedicated button. If an operator asks what it is,
-    # dopiero wtedy dokladamy wspolny mechanizm podpowiedzi dla calego UI.
+    # so a shared hint mechanism for the whole UI comes only once it earns its keep.
     _btn_reprint.bind("<Enter>", lambda e: _btn_reprint.config(fg=UI["accent"]))
     _btn_reprint.bind("<Leave>", lambda e: _btn_reprint.config(fg=UI["faint"]))
     def remove_last_pick():
-        """Usuwa OSTATNIO dodany pick: najpierw koniec kolejki (bez utraty pracy),
-           a gdy kolejka pusta - anuluje biezacy (z potwierdzeniem; bez sladu w metrykach VERIFIED)."""
+        """Removes the MOST RECENTLY added pick: the tail of the queue first, losing no work,
+           and when the queue is empty it cancels the current one, with a confirmation and no VERIFIED metric."""
         if station["queue"]:
             pd = station["queue"].pop()
             log_event("PICK_CANCELLED", pick=pd.get("title",""), doc=pd.get("hdr",""), scope="queued")
@@ -3266,7 +3269,7 @@ def run_gui():
                 loc = f"{r['qty']} box" if pk <= 1 else f"{r['qty']} box · {pk}x"
                 itree.insert("","end",iid=pid, open=(idx==serial_mode["active"]),
                     values=(mark, r["sku"], loc, f'{len(r["serials"])}/{target}'), tags=(tag,))
-                # seriale: dla pakow >1 pokaz numer pudelka, inaczej #pozycja
+                # serials: for packs larger than one show the box number, otherwise the line index
                 for j,s in enumerate(r["serials"]):
                     label = f"#{j+1}" if pk <= 1 else f"box {j//pk + 1}"
                     itree.insert(pid,"end",iid=f"{pid}_s{j}", values=("", s, "", label), tags=("todo",))
@@ -3297,7 +3300,7 @@ def run_gui():
             sku_disp = ("🔖 " + i["sku"]) if i.get("serial") else i["sku"]
             itree.insert("","end",iid=str(idx),
                 values=(mark, sku_disp, i["bin"] or "—", f'{i["scanned"]}/{i["need"]}'), tags=(tag,))
-        # przycisk "Serials →" widoczny gdy pick ma itemy z serialami (i nie jestesmy w trybie seriali)
+        # the "Serials →" button appears when the pick holds serialised items and serial mode is off
         has_ser = any(i.get("serial") for i in cur["items"])
         if has_ser and not btn_to_serials.winfo_ismapped():
             btn_to_serials.pack(side="left", padx=(10,3), pady=6)
@@ -3311,7 +3314,7 @@ def run_gui():
     def load_next():
         if session["on"]: return
         if station["cur"] is None and station["queue"]:
-            # nowy pick = czysty start trybu seriali (poprzednie dane juz nieaktualne)
+            # a new pick resets serial mode: the previous data is no longer valid
             serial_mode["on"]=False; serial_mode["radios"]=[]; serial_mode["active"]=None
             serial_mode["seen"]=set(); serial_mode["history"]=[]
             flagged["wrong"]=set(); flagged["noise"]=set(); flagged["over"]=set()
@@ -3323,7 +3326,7 @@ def run_gui():
             refresh_station()
 
     def _pick_alert():
-        """Czerwona kropka + licznik dla konsoli, gdy pick wpada, a operator jest w innym widoku."""
+        """Red dot plus counter for the console when a pick arrives while the operator is elsewhere."""
         try:
             if nb.select() != str(t1): nb.alert("Pick Station", True)
             web_alerts["pick"] = web_alerts.get("pick", 0) + 1
@@ -3380,10 +3383,10 @@ def run_gui():
                 feedback(f"Box SKU mismatch — expected {line['sku']}, got {code}", "err"); _beep("err")
         elif bulk["step"] == "qty":
             qty = parse_scanned_qty(code)
-            # LOCK 1 (format): kod ilosci musi byc liczba (Q30 / qty20 / 30)
+            # LOCK 1 (format): a quantity code must be a number (Q30 / qty20 / 30)
             if qty is None:
                 feedback(f"'{code}' is not a QTY code. Scan the box qty label (e.g. Q30 or 30).", "err"); _beep("err"); return
-            # ZAWOR: ten sam kod zeskanowany PONOWNIE w 8s po odrzucie predkosci = potwierdzenie etykiety
+            # RELIEF VALVE: the same code rescanned within 8s of a speed reject counts as label confirmation
             retry = bulk.get("retry")
             double_ok = bool(retry and retry["code"] == code and (time.time() - retry["ts"]) <= 8.0)
             # LOCK 2 (predkosc): sprzetowe timestampy zdarzen; odrzut loguje realne ms do kalibracji
@@ -3428,7 +3431,7 @@ def run_gui():
                 bulk_hint.config(text=f"BULK on {line['sku']} — cancelled, scan box SKU again")
 
     pa_q = _queue.Queue()
-    # ---------- TAB: INBOUND (edytowalna siatka: pole BIN przy kazdym itemie) ----------
+    # ---------- TAB: INBOUND (editable grid with a BIN field per item) ----------
     t_in = tk.Frame(nb, bg=UI["bg"])   # wpiecie na pozycje #2 w boocie
     pa_hdr = tk.Label(t_in, text="\U0001F4E6 INBOUND", fg=UI["accent"], bg=UI["bg"], font=("Bahnschrift",16,"bold"))
     pa_hdr.pack(anchor="w", padx=16, pady=(12,0))
@@ -3454,8 +3457,8 @@ def run_gui():
     _in = tk.Frame(_cv, bg=UI["panel"])
     _cv_win = _cv.create_window((0,0), window=_in, anchor="nw")
     def _pa_sync_scroll(_=None):
-        """v1.0 FIX scroll-lock: scrollregion min. rozmiaru viewportu -> nie da sie
-           'odplynac' nad tresc; gdy tresc miesci sie w oknie, widok twardo na gorze."""
+        """Scroll-lock fix: the scrollregion is never smaller than the viewport, so the view
+           cannot drift above the content, and when everything fits it stays pinned to the top."""
         try:
             ch, cw = _cv.winfo_height(), _cv.winfo_width()
             iw, ih = _in.winfo_reqwidth(), _in.winfo_reqheight()
@@ -3530,7 +3533,7 @@ def run_gui():
                 pa_feedback("\u2713 All bins set \u2014 paste them into BC (click a field = copy), then \u2705 Confirm.","ok")
         return "break"
     def _pa_set_bin(i, binv, src):
-        """Jedyna sciezka ustawiania binu z handhelda/TC22: zapisuje poprzednia wartosc do undo."""
+        """The only path for setting a bin from the handheld: it records the previous value for undo."""
         if not (0 <= i < len(pa["lines"])): return False
         prev = pa["lines"][i].get("bin", "")
         pa["lines"][i]["bin"] = binv
@@ -3542,9 +3545,9 @@ def run_gui():
                       qty=pa["lines"][i].get("qty",0), bin=binv, src=src)
         return True
     def _maybe_refresh_export():
-        """Odswieza eksport TYLKO gdy jest starszy niz prog - zamiast bicia w BC co kilka minut.
+        """Refreshes the export ONLY when it is older than the threshold, instead of hitting the ERP every few minutes.
            Skrypt idzie w watku roboczym; sugestie z biezacego pliku dzialaja od razu,
-           swiezsze dane wskakuja, gdy skrypt skonczy (rebuild_rows przez kolejke)."""
+           fresher data appears once the script finishes, through rebuild_rows on the queue."""
         try:
             if not cfg.get("bin_export_auto"): return
             path = (cfg.get("bin_export_path") or "").strip()
@@ -3603,7 +3606,7 @@ def run_gui():
             pass
         root.after(500, drain_bc)
     def _set_bin_from_suggestion(i, binv):
-        """Klik w sugerowany bin = wpisanie go w pole i commit (ta sama sciezka co wpis reczny)."""
+        """Clicking a suggested bin writes it into the field and commits, the same path as typing it."""
         try:
             for r in pa_rows:
                 if r["idx"] == i:
@@ -3768,7 +3771,7 @@ def run_gui():
                                ts=datetime.now().strftime("%H:%M:%S"), file=os.path.basename(outp))
             except Exception as e:
                 # pa_done zasila "LAST CONFIRMED" na skanerze - ochrone przed
-                # przypadkowym Confirm. Cichy blad zostawia tam STARE dane.
+                # an accidental Confirm. A silent failure leaves STALE data there.
                 logln(f"⚠ LAST CONFIRMED nie zaktualizowane: {str(e)[:70]}")
             if pa_pending:
                 root.after(600, lambda: load_next_pa(auto=True))   # nastepna lista wskakuje sama po potwierdzeniu
@@ -3804,8 +3807,8 @@ def run_gui():
             pa_feedback(f"\U0001F4E6 {hdr} loaded ({len(rows)} items) \u2014 {len(pa_pending)} more pending (\u23ED Next).","info")
         _pa_pending_sync()
     def pa_load_pdf():
-        """v1.0: reczny import put-away PDF (watcher off / plik z maila / retro).
-           Routing przez pa_q - identyczna sciezka jak watcher (FIFO, auto-load), BEZ druku arkusza."""
+        """Manual put-away PDF import (watcher off, a file from email, or a retro entry).
+           Routed through pa_q, the same path the watcher uses (FIFO, auto-load), WITHOUT printing a sheet."""
         f = filedialog.askopenfilename(title="Select put-away PDF", filetypes=[("PDF","*.pdf")])
         if not f: return
         try:
@@ -4021,7 +4024,7 @@ def run_gui():
         if not station["cur"]: feedback("No active pick to scan against.", "warn"); _beep("err"); return
         if bulk["on"]: handle_bulk(code, was_scanned); return
         cur = station["cur"]
-        # --- pick JUZ zweryfikowany (widok zawieszonych seriali) - skan tu to NIE blad pickera ---
+        # --- pick ALREADY verified (suspended serials view): a scan here is NOT a picker error ---
         if all(i["scanned"] >= i["need"] for i in cur["items"]):
             if serial_mode["radios"]:
                 okv, _w = valid_serial(code, [i["sku"] for i in cur["items"]])
@@ -4038,9 +4041,9 @@ def run_gui():
             return
         idx = _find_line(code)
         if idx is None:
-            # ===== TRIAGE nietrafionego skanu: prawdziwy blad vs szum =====
+            # ===== TRIAGE of a missed scan: real error versus noise =====
             if _sku_exists(code):
-                # item z picka, ale linia pelna = proba nadwyzki (dedupe per pick per kod)
+                # an item on the pick with its line already full is an overpick attempt (deduplicated per pick per code)
                 feedback(f"{code}: LINE ALREADY COMPLETE", "warn"); _beep("err")
                 key = _norm_sku(code)
                 if key not in flagged["over"]:
@@ -4050,13 +4053,13 @@ def run_gui():
             kind = classify_scan(code, [i["sku"] for i in cur["items"]])
             key = code.strip().upper()
             if kind == "sku":
-                # SKU z rejestru katalogowego, nie na tym picku = PRAWDZIWY zly item (liczony jako strata)
+                # a SKU from the catalogue registry that is not on this pick is a REAL wrong item, counted as a loss
                 feedback(f"{code}: NOT ON THIS PICK", "err"); _beep("err")
                 if key not in flagged["wrong"]:
                     flagged["wrong"].add(key)
                     log_event("WRONG_ITEM", code=code, pick=cur["title"], doc=cur["hdr"])
             else:
-                # szum: qty poza bulkiem / EAN / serial za wczesnie / nierozpoznany - NIE liczone jako strata
+                # noise: qty outside bulk, an EAN, a serial scanned too early, or an unknown code - NOT counted as a loss
                 msg = {"qty":     "Q-code scanned — quantity codes only work in BULK mode.",
                        "numeric": f"{code}: numeric code not matched — not on this pick / not in catalog yet.",
                        "serial":  f"{code}: looks like a SERIAL — serials are scanned after verification.",
@@ -4087,7 +4090,7 @@ def run_gui():
 
     def toggle_serial():
         """Reczne oznaczenie/odznaczenie itemu jako 'z numerem seryjnym' (laczone z auto-wykryciem).
-           Przy wlaczaniu oferuje ZAPAMIETANIE SKU dla przyszlych pickow."""
+           When enabled it offers to REMEMBER the SKU for future picks."""
         if serial_mode["on"]: return
         cur = station["cur"]
         if not cur: feedback("No active pick.", "warn"); return
@@ -4142,7 +4145,7 @@ def run_gui():
             units = sum(i["need"] for i in cur["items"])
             write_log_file(f"    VERIFIED {cur['title']} (doc {cur['hdr']})")
             log_event("PICK_VERIFIED", pick=cur["title"], doc=cur["hdr"], units=units, lines=len(cur["items"]))
-            # --- TELEMETRIA SLOTTINGOWA (raz na pick, bez operatora) ---
+            # --- SLOTTING TELEMETRY (once per pick, no operator identity) ---
             if pick_t["scans"] and not pick_t.get("sent"):
                 pick_t["sent"] = True
                 printed = cur.get("printed_ts")
@@ -4200,14 +4203,14 @@ def run_gui():
         scan_entry.focus_set()
 
     def suspend_serial_mode():
-        """Powrot do widoku picka BEZ utraty zeskanowanych seriali (wznawiasz przez 'Serials →')."""
+        """Returns to the pick view WITHOUT losing captured serials; resume through 'Serials →'."""
         serial_mode["on"] = False
         _show_validation_buttons()
         feedback("Back to pick view. Press 'Serials →' to resume serial scanning.", "info")
         refresh_station(); scan_entry.focus_set()
 
     def exit_serial_mode():
-        """Pelne wyjscie + wyczyszczenie danych seriali (przy zamknieciu picka / nowym picku)."""
+        """Full exit plus a wipe of serial data, on closing a pick or starting a new one."""
         serial_mode["on"]=False; serial_mode["radios"]=[]; serial_mode["active"]=None
         serial_mode["seen"]=set(); serial_mode["history"]=[]
         _show_validation_buttons()
@@ -4374,7 +4377,7 @@ def run_gui():
     def drain_io_fails():
         """Wyciaga do Logs awarie I/O zebrane przez note_io_fail().
            write_log_file i log_event nie moga wolac logln (byloby zapetlenie),
-           wiec zbieraja sie na poziomie modulu, a stad trafiaja do operatora."""
+           so they accumulate at module level and reach the operator from there."""
         try:
             while IO_FAILS:
                 where, err = IO_FAILS.pop(0)
@@ -4503,7 +4506,7 @@ def run_gui():
 
     def clean_history():
         """Retro-klasyfikacja: stare WRONG_ITEM bedace szumem (qty/EAN/serial-podobne) -> NOISE_SCAN.
-           Konserwatywnie: kody z rejestru znanych SKU ZOSTAJA bledami. Backup .bak przed zapisem."""
+           Conservative by design: codes in the known-SKU registry REMAIN errors. A .bak backup is written first."""
         evs = load_events()
         if not evs: messagebox.showinfo("Clean history","No events to clean."); return
         known = load_known_skus()
@@ -4538,7 +4541,7 @@ def run_gui():
     stats_cache = {"per_day": {}}
     _resize_job = {"id": None}
     def _on_chart_resize(_e=None):
-        """Resize = tylko przerysowanie z cache (debounce), ZERO I/O na dysku."""
+        """A resize only redraws from cache, debounced, with ZERO disk I/O."""
         if _resize_job["id"]:
             try: chart.after_cancel(_resize_job["id"])
             except Exception: pass
@@ -4551,7 +4554,7 @@ def run_gui():
         except Exception: pass
     nb.bind("<<NotebookTabChanged>>", _on_tab_changed, add="+")   # v3.0 fix: bez add="+" kasowal handler Inbound
 
-    # ---------- TAB: WAREHOUSE (slotting analytics — tylko wlasciciel) ----------
+    # ---------- TAB: WAREHOUSE (slotting analytics) ----------
     _owners = [o.strip().upper() for o in (cfg.get("analytics_owners") or [])]
     if get_picker() in _owners:
         tware = tk.Frame(nb, bg=UI["bg"]); nb.add(tware, text="Warehouse", group="INSIGHTS", fkey="F7", icon="🏭")
@@ -4746,7 +4749,7 @@ def run_gui():
     tshp = tk.Frame(nb, bg=UI["bg"]); nb.add(tshp, text="Shipment labels", group="LABELS", fkey="F5", icon="📄")
     tk.Label(tshp, text="Shipment kit labels — parse a shipment PDF", fg=UI["accent"], bg=UI["bg"],
              font=("Bahnschrift",15,"bold")).pack(pady=(14,2))
-    tk.Label(tshp, text="MDH radios + *-ASM lines  ·  configurable size / DPI  ·  Zebra RAW",
+    tk.Label(tshp, text="main units + *-ASM lines  ·  configurable size / DPI  ·  Zebra RAW",
              fg=UI["muted"], bg=UI["bg"], font=("Cascadia Mono",9)).pack()
     shp = {"kits": {}, "file": ""}
     _sf = tk.Frame(tshp, bg=UI["bg"]); _sf.pack(pady=8)
@@ -4759,7 +4762,7 @@ def run_gui():
         except Exception as e:
             messagebox.showerror("PDF error", str(e)); _beep("err"); return
         shp["kits"] = kits; shp["file"] = os.path.basename(f)
-        shp_kit["values"] = list(kits.keys()) or ["[no MDH kits found in PDF]"]
+        shp_kit["values"] = list(kits.keys()) or ["[no kits found in PDF]"]
         shp_kit.current(0)
         shp_file_lbl.config(text=f'{shp["file"]} — {len(kits)} kit(s)', fg=(UI["ok"] if kits else UI["warn"]))
         logln(f"📄 Shipment PDF: {shp['file']} → {len(kits)} kit(s)")
@@ -4849,7 +4852,7 @@ def run_gui():
               relief="flat", font=("Bahnschrift",9)).pack(side="left", padx=4)
 
 
-    # ---------- VIEW: RELOCATIONS (bin-to-bin -> dziennik reklasyfikacji BC) ----------
+    # ---------- VIEW: RELOCATIONS (bin-to-bin, feeds the ERP reclassification journal) ----------
     trel = tk.Frame(nb, bg=UI["bg"]); nb.add(trel, text="Relocations", group="OPERATIONS", icon="\U0001F500")
     rel = {"lines": [], "pend": {}}
     REL_PATH = os.path.join(ensure_app_folders()[2], "reloc_session.json")
@@ -4892,8 +4895,8 @@ def run_gui():
         try: Path(REL_PATH).write_text(json.dumps({"lines": rel["lines"]}, indent=1), encoding="utf-8")
         except Exception: pass
     def _rel_copy(val, what):
-        """FIX: update_idletasks() NIE przetwarza zdarzen schowka - Windows dostawal pusty/stary bufor.
-           Wymagane pelne update(). Wartosc zawsze jako czysty tekst bez biale znakow na brzegach."""
+        """FIX: update_idletasks() does NOT process clipboard events, so Windows saw an empty or stale buffer.
+           A full update() is required. The value always goes out as plain text, trimmed."""
         try:
             val = str(val).strip()
             root.clipboard_clear(); root.clipboard_append(val); root.update()
@@ -4934,10 +4937,10 @@ def run_gui():
                           insertbackground=UI["text"], relief="flat", font=("Cascadia Mono",11))
             qe.pack(side="left", padx=6)
             def _qcommit(_e=None, i=i, qv=qv, copy=True):
-                """BUGFIX: kopiowanie do schowka TYLKO przy jawnym ENTER.
+                """BUGFIX: the clipboard is written ONLY on an explicit ENTER.
                    Wczesniej wisialo tez na <FocusOut>, wiec klik w lokacje wygladal tak:
                    klik kopiuje bin -> pole ilosci traci fokus -> handler NADPISUJE schowek qty.
-                   Efekt: zawsze wklejala sie ilosc, nigdy kod lokacji."""
+                   The effect was that the quantity pasted every time and the location code never did."""
                 try:
                     q = int(qv.get())
                     if q < 1: raise ValueError
@@ -5003,7 +5006,7 @@ def run_gui():
     rel_scan.bind("<Return>", _rel_scan_enter)
     _rbot = tk.Frame(trel, bg=UI["bg"]); _rbot.pack(pady=(2,10))
     def _rel_tsv(l):
-        """Wiersz do wklejenia w dziennik BC. KOLEJNOSC JEST KONFIGUROWALNA, bo BC pozwala
+        """A row to paste into the ERP journal. THE ORDER IS CONFIGURABLE, because the ERP allows
            personalizowac uklad kolumn i rozni sie miedzy uzytkownikami/stacjami.
            Klucze: sku, desc, loc, nloc, bin, nbin, qty."""
         vals = {"sku": l.get("sku",""),
@@ -5048,7 +5051,7 @@ def run_gui():
     rel_rebuild()
 
 
-    # ---------- VIEW: FORWARDER (shipment PDF -> payload dla portalu spedytora) ----------
+    # ---------- VIEW: FORWARDER (shipment PDF -> payload for the forwarder portal) ----------
     tsb = tk.Frame(nb, bg=UI["bg"]); nb.add(tsb, text="Forwarder", group="OUTBOUND", fkey="F11", icon="\U0001F69A")
     sb = {"data": None}
     tk.Label(tsb, text="\U0001F69A  Forwarder shipment", fg=UI["accent"], bg=UI["bg"],
@@ -5138,9 +5141,9 @@ def run_gui():
         # W Downloads wydruki z BC (Sales - Shipment - ...pdf) leza WYMIESZANE z
         # etykietami kuriera (label_*.pdf) pobieranymi po utworzeniu przesylki.
         # Wybranie etykiety dawalo pusty formularz i mylacy komunikat o kartotece.
-        # Dialog startuje wiec w Downloads z JUZ ZAZNACZONYM najnowszym wydrukiem
-        # z BC. Filtrujemy przez initialfile, nie przez wzorzec filetypes - natywny
-        # dialog Windows nie traktuje wzorcow innych niz rozszerzenie niezawodnie.
+        # The dialog therefore opens in Downloads with the newest export ALREADY SELECTED.
+        # Filtering uses initialfile rather than a filetypes pattern, because the native
+        # Windows dialog does not handle patterns beyond the extension reliably.
         _kw = {}
         _dl = os.path.join(os.path.expanduser("~"), "Downloads")
         if os.path.isdir(_dl):
@@ -5161,9 +5164,9 @@ def run_gui():
         except Exception as e:
             messagebox.showerror("Shipment", str(e)); return
         d = enrich_from_customers(d)     # telefon / e-mail / kontakt z kartoteki, adres z DOKUMENTU
-        # Dokument, ktorego parser nie rozpoznaje, dawal PUSTY formularz i czerwone
+        # A document the parser does not recognise used to yield an EMPTY form and red
         # "customer not found in database" - komunikat o ZLYM problemie. Operator
-        # szuka wtedy bledu w kartotece klientow, a wina jest w tym, ze wczytal
+        # the operator then hunts for a fault in the customer file, when the real cause is
         # list przewozowy kuriera (kolumny Shipper's / Consignee's Name) zamiast
         # Sales Shipment z BC (blok Delivery Address). Mowimy to wprost.
         if not (str(d.get("company") or "").strip() or str(d.get("shipment_no") or "").strip()):
