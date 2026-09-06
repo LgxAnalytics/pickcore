@@ -42,6 +42,23 @@ function key, so a collapsed rail never leaves the operator guessing. Views
 register through a Notebook-compatible API, which keeps the shell replaceable
 without touching any tab content.
 
+## Browser bookmarklet
+
+`bookmarklet.js` fills a third-party forwarder portal form from a shipment
+payload held on the clipboard. The portal offers no API and no stable markup,
+so fields are located by their visible label first, then by the text of the
+surrounding cell, then by name/id/placeholder as a last resort. Nothing is ever
+submitted: the operator reviews the form and presses Submit.
+
+Two details make it survive real portals. Every filled field is tagged through
+`dataset`, so a second run is idempotent and a later pass cannot overwrite an
+earlier one. And because the form re-renders after country and parcel-count
+changes, dropping values as it goes, applied fields are verified and re-applied
+once before the summary is shown.
+
+That file is the source of truth. `pickcore.py` carries a percent-encoded copy
+generated from it, so the readable version is the one to edit.
+
 ## Running it
 
 ```
