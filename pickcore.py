@@ -2760,18 +2760,38 @@ def run_gui():
                     borderwidth=0, thickness=18)
     # ================== COCKPIT SHELL v3.0: sidebar + header + status bar ==================
     class SideNav(tk.Frame):
-        """Nawigacja cockpit: pionowy rail z grupami + widoki przelaczane przez lift().
-           Zgodna z uzywanym podzbiorem API ttk.Notebook (add/insert/select/tab +
-           wirtualne <<NotebookTabChanged>>) - istniejace handlery dzialaja bez zmian."""
+        """Cockpit shell v1.1: zwijany rail ikonowy + pasek kontekstu nad trescia.
+           Rail startuje waski (same ikony, etykieta w dymku), przypinany klikiem
+           w logo. API zgodne z uzywanym podzbiorem ttk.Notebook (add/insert/select/
+           tab/alert + wirtualne <<NotebookTabChanged>>), wiec zawartosc zakladek
+           nie wymaga zadnych zmian."""
         GROUPS = ("OUTBOUND", "INBOUND", "OPERATIONS", "LABELS", "INSIGHTS", "SYSTEM")
+        W_MIN, W_MAX, ROW_H = 60, 210, 38
         def __init__(self, master):
             super().__init__(master, bg=UI["bg"])
-            self.rail = tk.Frame(self, bg=UI["panel"], width=182)
+            self.open = False
+            self._tip = None
+            self.rail = tk.Frame(self, bg=UI["panel"], width=self.W_MIN)
             self.rail.pack(side="left", fill="y"); self.rail.pack_propagate(False)
             tk.Frame(self, bg=UI["border"], width=1).pack(side="left", fill="y")
-            self.body = tk.Frame(self, bg=UI["bg"])
-            self.body.pack(side="left", fill="both", expand=True)
+            right = tk.Frame(self, bg=UI["bg"]); right.pack(side="left", fill="both", expand=True)
+            # Pasek kontekstu: przy zwinietym railu to jedyne miejsce, gdzie widac
+            # pelna nazwe biezacego widoku. Bez niego ikony sa zagadka.
+            self.ctx = tk.Frame(right, bg=UI["bg"], height=36)
+            self.ctx.pack(side="top", fill="x"); self.ctx.pack_propagate(False)
+            self.ctx_ico = tk.Label(self.ctx, text="", fg=UI["accent"], bg=UI["bg"],
+                                    font=("Bahnschrift", 13))
+            self.ctx_ico.pack(side="left", padx=(16, 7))
+            self.ctx_lbl = tk.Label(self.ctx, text="", fg=UI["text"], bg=UI["bg"],
+                                    font=("Bahnschrift", 12, "bold"))
+            self.ctx_lbl.pack(side="left")
+            self.ctx_key = tk.Label(self.ctx, text="", fg=UI["faint"], bg=UI["bg"],
+                                    font=("Cascadia Mono", 8, "bold"))
+            self.ctx_key.pack(side="left", padx=9)
+            tk.Frame(right, bg=UI["border"], height=1).pack(side="top", fill="x")
+            self.body = tk.Frame(right, bg=UI["bg"]); self.body.pack(side="top", fill="both", expand=True)
             self._items = []; self._cur = None
+        # ---- rejestracja pozycji (API bez zmian) ----
         def _nav_register(self, pos, kind, frame, text, group, fkey, icon, cmd=None):
             it = {"kind": kind, "frame": frame, "text": text.strip(), "group": group,
                   "fkey": fkey, "icon": icon, "cmd": cmd}
@@ -2786,45 +2806,112 @@ def run_gui():
             self._nav_register(pos, "view", child, text, group, fkey, icon)
         def add_action(self, text, command, group="OPERATIONS", fkey=None, icon=""):
             self._nav_register(None, "action", None, text, group, fkey, icon, cmd=command)
+
+        # ---- zwijanie ----
+        def toggle(self):
+            self.open = not self.open
+            self.rail.config(width=(self.W_MAX if self.open else self.W_MIN))
+            self._hide_tip(); self._rebuild()
+
+        def _show_tip(self, it):
+            """Dymek z nazwa przy zwinietym railu. Toplevel bez dekoracji, bo
+               etykieta w srodku rail-a rozpychalaby go do szerokosci tekstu."""
+            if self.open or not it.get("row"): return
+            self._hide_tip()
+            try:
+                x = self.rail.winfo_rootx() + self.W_MIN + 6
+                y = it["row"].winfo_rooty() + 6
+                t = tk.Toplevel(self); t.wm_overrideredirect(True); t.wm_geometry(f"+{x}+{y}")
+                tk.Label(t, text=f'  {it["text"]}  {it["fkey"] or ""}  ', bg=UI["panel2"],
+                         fg=UI["text"], font=("Bahnschrift", 9, "bold"),
+                         bd=1, relief="solid", pady=3).pack()
+                self._tip = t
+            except Exception:
+                self._tip = None
+
+        def _hide_tip(self):
+            if self._tip is not None:
+                try: self._tip.destroy()
+                except Exception: pass
+                self._tip = None
+        # ---- rysowanie rail-a ----
         def _rebuild(self):
             for w in self.rail.winfo_children(): w.destroy()
-            tk.Frame(self.rail, bg=UI["panel"], height=4).pack(fill="x")
+            brand = tk.Frame(self.rail, bg=UI["panel"], height=46, cursor="hand2")
+            brand.pack(fill="x"); brand.pack_propagate(False)
+            mark = tk.Label(brand, text="\u25E7", fg=UI["accent"], bg=UI["panel"],
+                            font=("Bahnschrift", 15, "bold"))
+            mark.pack(side="left", padx=(20, 0) if not self.open else (18, 8))
+            wid = [brand, mark]
+            if self.open:
+                nm = tk.Label(brand, text="PickCore", fg=UI["text"], bg=UI["panel"],
+                              font=("Bahnschrift", 12, "bold"))
+                nm.pack(side="left"); wid.append(nm)
+            for w in wid:
+                w.bind("<Button-1>", lambda e: self.toggle())
+            tk.Frame(self.rail, bg=UI["border"], height=1).pack(fill="x")
             for g in self.GROUPS:
                 grp = [it for it in self._items if it["group"] == g]
                 if not grp: continue
-                tk.Label(self.rail, text=g, fg=UI["faint"], bg=UI["panel"],
-                         font=("Bahnschrift",7,"bold"), anchor="w").pack(fill="x", padx=12, pady=(10,2))
+                if self.open:
+                    tk.Label(self.rail, text=g, fg=UI["faint"], bg=UI["panel"],
+                             font=("Bahnschrift", 7, "bold"), anchor="w").pack(fill="x", padx=14, pady=(11, 2))
+                else:
+                    tk.Frame(self.rail, bg=UI["panel"], height=7).pack(fill="x")
+                    tk.Frame(self.rail, bg=UI["border"], height=1).pack(fill="x", padx=16)
+                    tk.Frame(self.rail, bg=UI["panel"], height=5).pack(fill="x")
                 for it in grp:
-                    row = tk.Frame(self.rail, bg=UI["panel"], cursor="hand2"); row.pack(fill="x", pady=1)
-                    bar = tk.Frame(row, bg=UI["panel"], width=3); bar.pack(side="left", fill="y")
-                    lbl = tk.Label(row, text=f'{it["icon"]}  {it["text"]}', fg=UI["muted"], bg=UI["panel"],
-                                   font=("Bahnschrift",10,"bold"), anchor="w")
-                    lbl.pack(side="left", fill="x", expand=True, padx=(8,2), pady=6)
-                    key = tk.Label(row, text=it["fkey"] or "", fg=UI["faint"], bg=UI["panel"],
-                                   font=("Bahnschrift",8), anchor="e")
-                    key.pack(side="right", padx=(0,10))
-                    dot = tk.Label(row, text="", fg="#ff5c5c", bg=UI["panel"], font=("Bahnschrift",12,"bold"))
-                    dot.pack(side="right", padx=(0,2))
-                    it.update(row=row, bar=bar, lbl=lbl, key=key, dot=dot)
-                    if it.get("alert"): dot.config(text="\u25CF")
-                    for w in (row, bar, lbl, key):
-                        w.bind("<Button-1>", lambda e, it=it: self._activate(it))
-                        w.bind("<Enter>",  lambda e, it=it: self._hover(it, True))
-                        w.bind("<Leave>",  lambda e, it=it: self._hover(it, False))
+                    self._row(it)
             self._restyle()
+
+        def _row(self, it):
+            row = tk.Frame(self.rail, bg=UI["panel"], cursor="hand2", height=self.ROW_H)
+            row.pack(fill="x", pady=1); row.pack_propagate(False)
+            bar = tk.Frame(row, bg=UI["panel"], width=3); bar.pack(side="left", fill="y")
+            ico = tk.Label(row, text=it["icon"] or "\u25AB", fg=UI["muted"], bg=UI["panel"],
+                           font=("Bahnschrift", 13), width=2)
+            ico.pack(side="left", padx=(11, 0))
+            lbl = tk.Label(row, text=it["text"], fg=UI["muted"], bg=UI["panel"],
+                           font=("Bahnschrift", 10, "bold"), anchor="w")
+            key = tk.Label(row, text=it["fkey"] or "", fg=UI["faint"], bg=UI["panel"],
+                           font=("Cascadia Mono", 8), anchor="e")
+            dot = tk.Label(row, text="", fg="#ff5c5c", bg=UI["panel"], font=("Bahnschrift", 11, "bold"))
+            if self.open:
+                lbl.pack(side="left", fill="x", expand=True, padx=(8, 2))
+                key.pack(side="right", padx=(0, 10))
+                dot.pack(side="right", padx=(0, 2))
+            else:
+                dot.place(relx=0.80, rely=0.18)
+            it.update(row=row, bar=bar, ico=ico, lbl=lbl, key=key, dot=dot)
+            if it.get("alert"): dot.config(text="\u25CF")
+            for w in (row, bar, ico, lbl, key):
+                w.bind("<Button-1>", lambda e, it=it: self._activate(it))
+                w.bind("<Enter>", lambda e, it=it: (self._hover(it, True), self._show_tip(it)))
+                w.bind("<Leave>", lambda e, it=it: (self._hover(it, False), self._hide_tip()))
+        # ---- stan wizualny ----
         def _is_on(self, it): return it["kind"] == "view" and it["frame"] is self._cur
         def _hover(self, it, on):
             if self._is_on(it) or "row" not in it: return
             bg = UI["panel2"] if on else UI["panel"]
-            it["row"].config(bg=bg); it["lbl"].config(bg=bg); it["key"].config(bg=bg); it["bar"].config(bg=bg)
+            for k in ("row", "lbl", "key", "bar", "ico", "dot"):
+                try: it[k].config(bg=bg)
+                except Exception: pass
         def _restyle(self):
             for it in self._items:
                 if "row" not in it: continue
                 on = self._is_on(it)
                 bg = UI["panel2"] if on else UI["panel"]
-                it["row"].config(bg=bg); it["bar"].config(bg=(UI["accent"] if on else bg))
-                it["lbl"].config(bg=bg, fg=(UI["accent"] if on else UI["muted"]))
-                it["key"].config(bg=bg, fg=(UI["accent"] if on else UI["faint"]))
+                fg = UI["accent"] if on else UI["muted"]
+                for k in ("row", "lbl", "key", "bar", "ico", "dot"):
+                    try: it[k].config(bg=bg)
+                    except Exception: pass
+                it["bar"].config(bg=(UI["accent"] if on else bg))
+                it["lbl"].config(fg=fg); it["ico"].config(fg=fg)
+                it["key"].config(fg=(UI["accent"] if on else UI["faint"]))
+                if on:
+                    self.ctx_ico.config(text=it["icon"] or "")
+                    self.ctx_lbl.config(text=it["text"])
+                    self.ctx_key.config(text=(it["fkey"] or ""))
         def alert(self, text, on=True):
             """Czerwona kropka przy pozycji nawigacji - cos wplynelo, a Ty jestes gdzie indziej."""
             for it in self._items:
@@ -2862,6 +2949,7 @@ def run_gui():
             for it in self._items:
                 if it.get("fkey"):
                     top.bind(f'<{it["fkey"]}>', lambda e, it=it: self._activate(it))
+            top.bind("<Control-b>", lambda e: self.toggle())
 
     # --- HEADER (globalny): brand | biezacy pick (przeniesiony z t1) | watcher | drukarka | operator ---
     hdr = tk.Frame(root, bg=UI["panel"]); hdr.pack(side="top", fill="x")

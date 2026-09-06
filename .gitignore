@@ -4,6 +4,11 @@ build/
 dist/
 *.spec
 _build_step1.py
+_build_step2.py
+_shell_new.txt
+build_out.txt
+build_err.txt
+run_err.txt
 Logi/
 Logs/
 Archiwum/
