@@ -54,3 +54,6 @@ _build_step15.py
 _audit_ui.py
 _ui.txt
 _shot_analyze.py
+
+_pin.graphql
+_q.graphql
