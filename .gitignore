@@ -24,3 +24,6 @@ Archiwum/
 *.zpl
 *.html
 .venv/
+
+_build_step4.py
+_iso_new.txt

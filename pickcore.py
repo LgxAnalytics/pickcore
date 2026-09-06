@@ -350,7 +350,7 @@ def primary_order(rows, header_no):
     return header_no or "PICK"
 
 def bin_sort_key(b):
-    """Naturalny porzadek lokacji: 20-D11-A1 < 20-D2-A1 leksykalnie, ale magazynowo odwrotnie.
+    """Natural location order: 01-D11-A1 sorts before 01-D2-A1 lexically, but a walk route reverses it.
        Rozbijamy na segmenty i porownujemy liczby jako liczby (jak na wydruku)."""
     out = []
     for seg in re.split(r"[-_/ ]+", (b or "").upper()):
@@ -430,7 +430,7 @@ def is_radio(sku):
 ACCESSORY_PREFIXES = ("PMPN","PMNN","PMKN","PMLN","PMAD","PMAE","PMMN","PMDN",
                       "NNTN","HKNN","HKVN","HLN","RLN","GLN","WPLN")
 def looks_like_sku(code):
-    """Strukturalne rozpoznanie czesci Motoroli PO PREFIKSIE (radio lub akcesorium).
+    """Structural recognition of an OEM part BY PREFIX (device or accessory).
        Domyka luke rozruchowa rejestru: zly item z rodziny katalogowej jest bledem
        nawet ZANIM rejestr go pozna (np. PMPN4297A gdy pick ma PMPN4289B)."""
     c = _norm_sku(code)
@@ -1051,7 +1051,7 @@ def generate_shipment_zpl(kit_id, items, w_mm, h_mm, dpi, copies):
 
 
 # ================= FORWARDER (shipment -> payload for the forwarder portal) =================
-# Layer carried over from the Forwarder Prep 0.1 test tool after it proved out in production.
+# Extracted from a standalone prototype once the address parser stabilised.
 # The parser identifies address lines BY CHARACTER - the "Delivery Address" block has no fixed structure.
 PARCEL_PRESETS = [
     ("XS  20x15x10", 20, 15, 10),
@@ -1311,10 +1311,11 @@ def _cap(value, key):
 
 def build_payload(data, ui):
     """Ladunek dla bookmarkletu. Klucze = pola formularza Forwarder."""
-    # Agreed with the operator: only device parcels go through the forwarder,
-    # so the parcel description is FIXED (the portal requires an English commercial description).
+    # The parcel description is a fixed constant rather than a per-item value:
+    # forwarder portals validate it against a commercial description list.
     desc = ui.get("description") or "Two way radios"
-    # Agreed with the operator: Sales Order No. -> Your reference, Your Order No -> Delivery reference
+    # Reference mapping: the internal order number becomes the sender reference,
+    # the customer order number becomes the delivery reference.
     ref = ui.get("reference") or data.get("sales_order", "")
     return {
         "your_reference": ref,
@@ -1397,8 +1398,8 @@ def load_customer_db(path):
                    "contact": (r.get(c_ct) or "").strip() if c_ct else "",
                    "phone": (r.get(c_ph) or "").strip() if c_ph else "",
                    "email": (r.get(c_em) or "").strip() if c_em else ""}
-            # NOTE: "un known" is a DELIBERATE filler - the forwarder requires a contact person,
-            # so it is entered on purpose when the contact is unknown. Only the spelling is normalised.
+            # NOTE: "un known" is a DELIBERATE filler - the target portal requires a contact person,
+            # so it is written on purpose when the contact is unknown. Only the spelling is normalised.
             # The "-" and empty variants are ignored, since they add nothing.
             for k in ("contact", "phone", "email"):
                 _v = rec[k].strip()
@@ -1627,10 +1628,10 @@ def loc_suggest(sku):
 
 # ---------- ADAPTER BUSINESS CENTRAL (Bin Contents przez OData V4 + OAuth2) ----------
 # ZASADY (nienegocjowalne):
-#  1. Pytamy TYLKO o SKU z biezacego dokumentu - nigdy o caly magazyn. Zero pollingu w tle.
+#  1. Query ONLY the SKUs on the current document, never the whole stock. No background polling.
 #  2. Sekret NIGDY w configu ani w kodzie: zmienna srodowiskowa PICKCORE_BC_SECRET
 #     albo Windows Credential Manager (keyring). Config trzyma wylacznie tenant/client_id/URL.
-#  3. Kazda awaria degraduje sie po cichu do indeksu lokalnego - magazyn nie moze stanac przez API.
+#  3. Every failure degrades silently to the local index - operations must not stall on an API.
 #  4. Timeouty krotkie: operator czeka na liste, nie na siec.
 BC_TOKEN = {"tok": "", "exp": 0.0}
 BC_CACHE = {}          # sku -> (ts, [rekordy])
@@ -1895,7 +1896,7 @@ def build_pickmap_heat_html(template_path, heat, unmapped, out_path):
     Path(out_path).write_text(txt, encoding="utf-8")
     return out_path
 
-# ---------------- PICKMAP ISO (oszukany rzut 3D hali - widok dla decydenta) ----------------
+# ---------------- PICKMAP ISO (faked 3D projection - a view for decision makers) ----------------
 def pickmap_iso_data():
     """Agregacja telemetrii per (grupa_stref, alejka, strona, bay) pod widok izometryczny.
        Strefy 30/31 = ta sama fizyczna pozycja (podloga/pietra) -> sumowane jako '30'."""
@@ -1914,27 +1915,31 @@ def pickmap_iso_data():
             heat[(zg, aisle, side, bay)] += 1
     return heat, un
 
-# geometria hal wg szkicow autora + modelu z pickmap_template (cross-aisle 18-19, entry, strefy)
-_L20A, _L20B = list(range(8, 18)), list(range(20, 30))
+# Synthetic demo layout. Deliberately generic: one entry per rack block, the
+# faces it covers, its bay numbers and its position on the isometric grid.
+# Replace this list with your own layout - nothing else in the renderer depends
+# on these values, and any location code that finds no block is reported as
+# unmapped rather than silently dropped.
+_LA, _LB = list(range(2, 12)), list(range(14, 24))
 ISO_BLOCKS = [
-    # hala regalowa (strefa 20): rzedy od sciany G-odd (ciagly), pary rozdzielone cross-aisle 18-19
-    {"label":"G odd",          "faces":[("20","G","odd")],                   "bays":list(range(9,30,2)), "gx":0.0,  "gy":0.0},
-    {"label":"G even · F odd", "faces":[("20","G","even"),("20","F","odd")], "bays":_L20A,               "gx":0.0,  "gy":2.2},
-    {"label":"G even · F odd", "faces":[("20","G","even"),("20","F","odd")], "bays":_L20B,               "gx":13.0, "gy":2.2},
-    {"label":"F even · E odd", "faces":[("20","F","even"),("20","E","odd")], "bays":_L20A,               "gx":0.0,  "gy":4.4},
-    {"label":"F even · E odd", "faces":[("20","F","even"),("20","E","odd")], "bays":_L20B,               "gx":13.0, "gy":4.4},
-    {"label":"E even · D odd", "faces":[("20","E","even"),("20","D","odd")], "bays":_L20A,               "gx":0.0,  "gy":6.6},
-    {"label":"E even · D odd", "faces":[("20","E","even"),("20","D","odd")], "bays":_L20B,               "gx":13.0, "gy":6.6},
-    {"label":"Zone 10 · A",    "faces":[("10","A","even")],                  "bays":[2,4,6,8,10],        "gx":0.0,  "gy":9.4, "vert":True},
-    # hala paletowa (30/31) wg wh2.png: B-odd u gory, dlugi B-even, A-odd, dol A-even, entry
-    {"label":"B odd 07-09",  "faces":[("30","B","odd")],  "bays":[7,9],     "gx":24.0, "gy":0.0, "tall":True},
-    {"label":"B odd 05",     "faces":[("30","B","odd")],  "bays":[5],       "gx":28.5, "gy":0.6, "tall":True},
-    {"label":"B odd 03",     "faces":[("30","B","odd")],  "bays":[3],       "gx":31.5, "gy":1.4, "tall":True},
-    {"label":"B even 02-06", "faces":[("30","B","even")], "bays":[2,4,6],   "gx":25.0, "gy":3.4, "tall":True},
-    {"label":"A odd 03-09",  "faces":[("30","A","odd")],  "bays":[3,5,7,9], "gx":26.5, "gy":5.0, "tall":True},
-    {"label":"A even 16",    "faces":[("30","A","even")], "bays":[14,16],   "gx":22.5, "gy":7.6, "tall":True},
-    {"label":"A even 10-12", "faces":[("30","A","even")], "bays":[10,12],   "gx":26.0, "gy":7.6, "tall":True},
-    {"label":"A even 02-06", "faces":[("30","A","even")], "bays":[2,4,6],   "gx":29.5, "gy":7.6, "tall":True},
+    # shelf hall (zone 01): rows anchored at the D-odd wall, pairs split by a cross-aisle
+    {"label":"D odd",          "faces":[("01","D","odd")],                   "bays":list(range(3,24,2)), "gx":0.0,  "gy":0.0},
+    {"label":"D even \u00b7 C odd", "faces":[("01","D","even"),("01","C","odd")], "bays":_LA,            "gx":0.0,  "gy":2.2},
+    {"label":"D even \u00b7 C odd", "faces":[("01","D","even"),("01","C","odd")], "bays":_LB,            "gx":13.0, "gy":2.2},
+    {"label":"C even \u00b7 B odd", "faces":[("01","C","even"),("01","B","odd")], "bays":_LA,            "gx":0.0,  "gy":4.4},
+    {"label":"C even \u00b7 B odd", "faces":[("01","C","even"),("01","B","odd")], "bays":_LB,            "gx":13.0, "gy":4.4},
+    {"label":"B even \u00b7 A odd", "faces":[("01","B","even"),("01","A","odd")], "bays":_LA,            "gx":0.0,  "gy":6.6},
+    {"label":"B even \u00b7 A odd", "faces":[("01","B","even"),("01","A","odd")], "bays":_LB,            "gx":13.0, "gy":6.6},
+    {"label":"Zone 03 \u00b7 A", "faces":[("03","A","even")],                  "bays":[2,4,6,8,10],        "gx":0.0,  "gy":9.4, "vert":True},
+    # pallet hall (zone 02): staggered blocks, entry on the lower edge
+    {"label":"B odd 07-09",  "faces":[("02","B","odd")],  "bays":[7,9],     "gx":24.0, "gy":0.0, "tall":True},
+    {"label":"B odd 05",     "faces":[("02","B","odd")],  "bays":[5],       "gx":28.5, "gy":0.6, "tall":True},
+    {"label":"B odd 03",     "faces":[("02","B","odd")],  "bays":[3],       "gx":31.5, "gy":1.4, "tall":True},
+    {"label":"B even 02-06", "faces":[("02","B","even")], "bays":[2,4,6],   "gx":25.0, "gy":3.4, "tall":True},
+    {"label":"A odd 03-09",  "faces":[("02","A","odd")],  "bays":[3,5,7,9], "gx":26.5, "gy":5.0, "tall":True},
+    {"label":"A even 14-16", "faces":[("02","A","even")], "bays":[14,16],   "gx":22.5, "gy":7.6, "tall":True},
+    {"label":"A even 10-12", "faces":[("02","A","even")], "bays":[10,12],   "gx":26.0, "gy":7.6, "tall":True},
+    {"label":"A even 02-06", "faces":[("02","A","even")], "bays":[2,4,6],   "gx":29.5, "gy":7.6, "tall":True},
 ]
 _ISO_HEAT = ["#3a3f4a", "#FDD79A", "#F7A64B", "#E2641F", "#B02E0C"]   # 0 = pusty + 4 stopnie (paleta szablonu)
 
@@ -1991,7 +1996,7 @@ def build_pickmap_iso_html(heat, unmapped, out_path):
     lab_svg = "".join(f'<text x="{x:.0f}" y="{y:.0f}" text-anchor="middle" font-size="11" fill="#a99a84">{t}</text>'
                       for x, y, t in labels)
     gx_, gy_ = iso(11.7, 8.2); ex, ey = iso(33.6, 9.9)
-    extra = (f'<text x="{gx_:.0f}" y="{gy_:.0f}" text-anchor="middle" font-size="10" fill="#7a6c58">cross-aisle 18-19</text>'
+    extra = (f'<text x="{gx_:.0f}" y="{gy_:.0f}" text-anchor="middle" font-size="10" fill="#7a6c58">cross-aisle</text>'
              f'<text x="{ex:.0f}" y="{ey:.0f}" text-anchor="middle" font-size="12" font-weight="700" fill="#46d17f">▲ ENTRY</text>')
     n_lines, n_locs = sum(heat.values()), len(heat)
     leg = "".join(f'<span style="display:inline-flex;align-items:center;gap:5px;margin-right:12px">'
@@ -4955,8 +4960,8 @@ def run_gui():
     def rel_feed(code):
         code = (code or "").strip().upper()
         if not code: return
-        # Kody lokacji magazynu (kazda ma wlasny barcode "MAIN") - ustawiaja Location Code,
-        # a nie bin. Lista konfigurowalna, zeby dolozyc DISPATCHED itp. bez zmiany kodu.
+        # Location codes: each has its own barcode and sets the Location Code,
+        # not the bin. The list is configurable so extra codes need no code change.
         locs = [x.strip().upper() for x in
                 (cfg.get("location_codes") or "MAIN,DISPATCHED,QUARANTINE,TRANSIT").split(",") if x.strip()]
         if code in locs:
